@@ -12,15 +12,16 @@ const LASTFM_USER = process.env.LASTFM_USER || "";
 const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE ---------
+// --------- STYLE (LEGIBILITY BOOST) ---------
+// Bigger but still “bio-sized” for your sidebar.
 const STYLE = {
-  width: 260,
-  paddingY: 14,
-  lineGap: 16,
+  width: 300,        // was 260
+  paddingY: 16,      // was 14
+  lineGap: 18,       // was 16
   paddingRight: 0,
 
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 11,
+  fontSize: 12,      // was 11
 
   labelColor: "#613d12",
   valueColor: "#000000",
@@ -128,12 +129,7 @@ async function getGoodreadsLatest() {
   const rawTitle = (item.title || "").trim();
   const link = (item.link || "").trim() || null;
 
-  const authorCandidates = [
-    item.author_name,
-    item.author,
-    item["dc:creator"],
-    item.creator,
-  ]
+  const authorCandidates = [item.author_name, item.author, item["dc:creator"], item.creator]
     .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter(Boolean);
 
