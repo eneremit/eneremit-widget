@@ -2,6 +2,7 @@
 // Generates now-playing.svg (Read / Watched / Listened)
 // Natural label/value spacing + wraps ONLY when needed
 // Protects author/artist chunk so it doesn't split (Anne Rice, Slayyter, etc.)
+// v2: less trigger-happy wrapping + better 2nd-line indent
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -14,7 +15,7 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE (Tumblr sidebar tuned) ---------
 const STYLE = {
-  width: 270,            // keep aligned with sidebar width so Tumblr doesn't shrink it weirdly
+  width: 270, // keep aligned with sidebar width so Tumblr doesn't shrink it weirdly
   paddingLeft: 0,
   paddingRight: 0,
   paddingTop: 18,
@@ -27,7 +28,7 @@ const STYLE = {
   labelColor: "#222222",
   valueColor: "#613d12",
 
-  gapPx: 6,              // space between label and value on line 1
+  gapPx: 6, // space between label and value on line 1
   lineGap: 24,
   maxLinesPerSection: 2, // value may wrap to 2 lines max
 };
@@ -67,15 +68,14 @@ function splitLabelValue(lineText) {
   const idx = lineText.indexOf(":");
   if (idx === -1) return { label: lineText.trim(), value: "" };
   return {
-    label: lineText.slice(0, idx + 1).trim(),     // includes colon
-    value: lineText.slice(idx + 1).trimStart(),   // value after colon
+    label: lineText.slice(0, idx + 1).trim(), // includes colon
+    value: lineText.slice(idx + 1).trimStart(),
   };
 }
 
-// Times at 16px: average glyph width rough estimate.
-// We only use this for WRAP decisions, not for spacing.
+// Looser width estimate for Times at 16px (prevents premature wrapping)
 function approxPxPerChar() {
-  return 8.2;
+  return 7.0;
 }
 
 function approxCharsThatFit(pxWidth) {
@@ -94,7 +94,6 @@ function wrapByWords(text, maxChars) {
   if (!t) return ["—"];
   if (t.length <= maxChars) return [t];
 
-  // find a nice break at a space
   const cut = t.lastIndexOf(" ", maxChars);
   const first = (cut > 20 ? t.slice(0, cut) : t.slice(0, maxChars)).trim();
 
@@ -106,67 +105,47 @@ function wrapByWords(text, maxChars) {
 
 /**
  * Smart wrap:
- * - Only wrap if needed
+ * - Only wrap if REALLY needed
  * - If value has " — " (author/artist), keep that chunk intact:
- *   Prefer:
- *     line1: main title...
- *     line2: — Author/Artist
- *   instead of splitting the name.
+ *   Prefer moving "— Author/Artist" to line 2 rather than splitting the name.
  */
 function smartWrapValue(label, value, availablePx, gapPx, maxLines) {
   const v = (value || "—").trim() || "—";
 
-  // Estimate how much space value has on line 1 after the label.
   const labelPx = label.length * approxPxPerChar();
-  const valuePx = Math.max(60, availablePx - labelPx - gapPx); // never let it become microscopic
-  const maxCharsLine1 = approxCharsThatFit(valuePx);
+  const valuePx = Math.max(90, availablePx - labelPx - gapPx); // give value a fair chance
+  const maxCharsLine1 = approxCharsThatFit(valuePx) + 10;      // extra slack to avoid false wraps
 
-  // If it fits on line 1, do nothing.
+  // If it fits (with slack), keep on ONE line.
   if (v.length <= maxCharsLine1) return [v];
 
-  // Protect author/artist chunk if present
   const sep = " — ";
+
+  // Protect author/artist if present
   if (v.includes(sep)) {
     const parts = v.split(sep);
-    const meta = parts.pop().trim();                 // author/artist
-    const main = parts.join(sep).trim();             // title (may also include dashes)
+    const meta = parts.pop().trim();
+    const main = parts.join(sep).trim();
 
-    // If the "main" fits on line1, push meta to line2 cleanly.
+    // If main fits on line1, put author/artist on line2 intact.
     if (main && main.length <= maxCharsLine1) {
-      const line2 = "— " + meta;
-      // Line2 width is full available width (no label)
-      const maxCharsLine2 = approxCharsThatFit(availablePx);
-      const safe2 = ellipsizeToFit(line2, maxCharsLine2);
+      const maxCharsLine2 = approxCharsThatFit(availablePx) + 10;
+      const safe2 = ellipsizeToFit("— " + meta, maxCharsLine2);
       return [main, safe2].slice(0, maxLines);
     }
 
-    // Otherwise: wrap main by words on line1/line2, then (if possible) append meta to line2,
-    // but never split meta. If it's too much, meta becomes its own line2.
-    const maxCharsLine2 = approxCharsThatFit(availablePx);
+    // Otherwise wrap main; keep meta intact on line2.
+    const maxCharsLine2 = approxCharsThatFit(availablePx) + 10;
     const [m1, m2raw] = wrapByWords(main || v, maxCharsLine1);
-    let m2 = (m2raw || "").trim();
-
-    if (!m2) {
-      const safe2 = ellipsizeToFit("— " + meta, maxCharsLine2);
-      return [m1, safe2].slice(0, maxLines);
-    }
-
-    // Try append meta to second line if it fits, otherwise meta alone on second line.
-    const candidate = `${m2}${sep}${meta}`.trim();
-    if (candidate.length <= maxCharsLine2) {
-      return [m1, candidate].slice(0, maxLines);
-    }
-
     const safe2 = ellipsizeToFit("— " + meta, maxCharsLine2);
     return [m1, safe2].slice(0, maxLines);
   }
 
   // No separator: normal wrap by words
-  const maxCharsLine2 = approxCharsThatFit(availablePx);
+  const maxCharsLine2 = approxCharsThatFit(availablePx) + 10;
   const lines = wrapByWords(v, maxCharsLine1);
   if (lines.length === 1) return lines;
 
-  // Ellipsize second line if needed
   lines[1] = ellipsizeToFit(lines[1], maxCharsLine2);
   return lines.slice(0, maxLines);
 }
@@ -279,11 +258,12 @@ function renderSvg(lines) {
 
   const availablePx = Math.max(40, width - paddingLeft - paddingRight);
 
-  // Pre-calc wrapped blocks so we can compute height
   const blocks = lines.map((line) => {
     const { label, value } = splitLabelValue(line.text);
     const wrapped = smartWrapValue(label, value, availablePx, gapPx, maxLinesPerSection);
-    return { label, wrapped, link: line.link || null };
+    // Indent line2 under where the VALUE starts (estimated from label length)
+    const valueIndentX = paddingLeft + label.length * approxPxPerChar() + gapPx;
+    return { label, wrapped, link: line.link || null, valueIndentX };
   });
 
   const totalLines = blocks.reduce((sum, b) => sum + Math.max(1, b.wrapped.length), 0);
@@ -300,13 +280,13 @@ function renderSvg(lines) {
 
       cursor += Math.max(1, b.wrapped.length);
 
-      // Line 1: label + value starts immediately after label (dx)
-      // Line 2: value-only, aligned to left padding (no weird gaps)
       const textNode = `
   <text x="${paddingLeft}" y="${y1}" class="line" text-anchor="start">
     <tspan class="label">${labelSafe}</tspan>
     <tspan class="value" dx="${gapPx}">${v1}</tspan>${
-      v2 ? `\n    <tspan class="value" x="${paddingLeft}" dy="${lineGap}">${v2}</tspan>` : ""
+      v2
+        ? `\n    <tspan class="value" x="${b.valueIndentX}" dy="${lineGap}">${v2}</tspan>`
+        : ""
     }
   </text>`;
 
