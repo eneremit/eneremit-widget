@@ -1,231 +1,162 @@
-/**
- * generate-svg.js
- * Generates now-playing.svg with 3 lines:
- * - Last Read (Goodreads RSS)
- * - Last Watched (Letterboxd RSS)
- * - Now Listening To / Last Listened To (Last.fm)
- *
- * Secrets (GitHub Actions):
- * - LASTFM_API_KEY
- * - LASTFM_USER
- * - GOODREADS_RSS
- * - LETTERBOXD_RSS
- */
+// generate-svg.js
+// Generates now-playing.svg with:
+// Last Read: Book — Author
+// Last Watched: Movie (Year)
+// Now Listening To: Track — Artist   (or Last Listened To if not now playing)
 
-import fs from "node:fs";
+const fs = require("fs");
+const { XMLParser } = require("fast-xml-parser");
 
-const LASTFM_API_KEY = process.env.LASTFM_API_KEY || "";
-const LASTFM_USER = process.env.LASTFM_USER || "";
+const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
+const LASTFM_USER = process.env.LASTFM_USER;
 
-const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
-const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
+// Public RSS feeds (no secrets needed)
+const GOODREADS_RSS = "https://www.goodreads.com/review/list_rss/138343303?shelf=read";
+const LETTERBOXD_RSS = "https://letterboxd.com/eneremit/rss/";
 
-function decodeEntities(str = "") {
-  // Basic HTML entity decoding good enough for titles
-  return str
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ")
-    .trim();
+function esc(s = "") {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
-function escapeXml(str = "") {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-// Fetch helper with nice errors
 async function fetchText(url) {
-  if (!url) return "";
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`Fetch failed (${res.status}) for ${url}`);
+  const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget" } });
+  if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
   return await res.text();
 }
 
-async function fetchJson(url) {
+async function getLastRead() {
+  try {
+    const xml = await fetchText(GOODREADS_RSS);
+    const parser = new XMLParser({ ignoreAttributes: false });
+    const data = parser.parse(xml);
+
+    const items = data?.rss?.channel?.item;
+    const first = Array.isArray(items) ? items[0] : items;
+    const title = first?.title ? String(first.title) : "";
+
+    // Common Goodreads RSS title looks like: "The Little Prince by Antoine de Saint-Exupéry"
+    if (title.includes(" by ")) {
+      const [book, author] = title.split(" by ");
+      return `${book.trim()} — ${author.trim()}`;
+    }
+
+    // Fallback: just show title
+    return title.trim() || "—";
+  } catch {
+    return "—";
+  }
+}
+
+async function getLastWatched() {
+  try {
+    const xml = await fetchText(LETTERBOXD_RSS);
+    const parser = new XMLParser({ ignoreAttributes: false });
+    const data = parser.parse(xml);
+
+    const items = data?.rss?.channel?.item;
+    const first = Array.isArray(items) ? items[0] : items;
+    let title = first?.title ? String(first.title).trim() : "";
+
+    // Letterboxd RSS titles often include year in parentheses. Keep it if present.
+    // If not present, we still show the title.
+    // Example: "Film Title (2024)"
+    return title || "—";
+  } catch {
+    return "—";
+  }
+}
+
+function urlencode(obj) {
+  return Object.entries(obj)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+}
+
+async function lastfm(method, params) {
+  if (!LASTFM_API_KEY || !LASTFM_USER) return null;
+
+  const url =
+    `https://ws.audioscrobbler.com/2.0/?method=${encodeURIComponent(method)}&` +
+    urlencode({ ...params, api_key: LASTFM_API_KEY, format: "json" });
+
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Fetch failed (${res.status}) for ${url}`);
+  if (!res.ok) return null;
   return await res.json();
 }
 
-function getFirstRssItemBlock(xml) {
-  // Grab first <item>...</item>
-  const m = xml.match(/<item\b[^>]*>([\s\S]*?)<\/item>/i);
-  return m ? m[1] : "";
-}
-
-function getTag(block, tagName) {
-  // Handles: <title>...</title> or <dc:creator>...</dc:creator>
-  const re = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i");
-  const m = block.match(re);
-  return m ? decodeEntities(m[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim()) : "";
-}
-
-function stripHtml(str = "") {
-  return str.replace(/<[^>]+>/g, "").trim();
-}
-
-/**
- * Goodreads RSS
- * Usually item <title> looks like: "The Little Prince by Antoine de Saint-Exupéry"
- */
-async function getGoodreadsLastRead() {
-  if (!GOODREADS_RSS) return { book: "—", author: "" };
-
+async function getListeningLine() {
   try {
-    const xml = await fetchText(GOODREADS_RSS);
-    const item = getFirstRssItemBlock(xml);
-    if (!item) return { book: "—", author: "" };
-
-    let title = getTag(item, "title");
-    title = stripHtml(title);
-
-    // Try to split "Book Title by Author"
-    const idx = title.toLowerCase().lastIndexOf(" by ");
-    if (idx > 0) {
-      const book = title.slice(0, idx).trim();
-      const author = title.slice(idx + 4).trim();
-      return { book: book || "—", author: author || "" };
-    }
-
-    // Fallback: some feeds include creator/author fields
-    const creator = getTag(item, "dc:creator") || getTag(item, "author");
-    return { book: title || "—", author: creator || "" };
-  } catch {
-    return { book: "—", author: "" };
-  }
-}
-
-/**
- * Letterboxd RSS
- * Titles often look like: "Opalite (2024) - ★★★★" or "Film Title, 2024 - ★★★"
- * We’ll extract "Film Title" and a 4-digit year if present.
- */
-async function getLetterboxdLastWatched() {
-  if (!LETTERBOXD_RSS) return { film: "—", year: "" };
-
-  try {
-    const xml = await fetchText(LETTERBOXD_RSS);
-    const item = getFirstRssItemBlock(xml);
-    if (!item) return { film: "—", year: "" };
-
-    let title = getTag(item, "title");
-    title = stripHtml(title);
-
-    // Keep only left side of " - ..."
-    title = title.split(" - ")[0].trim();
-
-    // Extract a 4-digit year anywhere
-    const yearMatch = title.match(/\b(19|20)\d{2}\b/);
-    const year = yearMatch ? yearMatch[0] : "";
-
-    // Remove common patterns: "(2024)" or ", 2024"
-    let film = title
-      .replace(/\((19|20)\d{2}\)/g, "")
-      .replace(/,\s*(19|20)\d{2}\b/g, "")
-      .trim();
-
-    // Sometimes title includes extra suffixes; keep it clean
-    film = film || "—";
-
-    return { film, year };
-  } catch {
-    return { film: "—", year: "" };
-  }
-}
-
-/**
- * Last.fm recent track
- */
-async function getLastfmListening() {
-  if (!LASTFM_API_KEY || !LASTFM_USER) {
-    return { label: "Last Listened To", track: "—", artist: "" };
-  }
-
-  try {
-    const url =
-      "https://ws.audioscrobbler.com/2.0/?" +
-      new URLSearchParams({
-        method: "user.getrecenttracks",
-        user: LASTFM_USER,
-        api_key: LASTFM_API_KEY,
-        format: "json",
-        limit: "1",
-      }).toString();
-
-    const data = await fetchJson(url);
+    const data = await lastfm("user.getrecenttracks", { user: LASTFM_USER, limit: 1 });
     const item = data?.recenttracks?.track?.[0];
-    if (!item) return { label: "Last Listened To", track: "—", artist: "" };
+    if (!item) return { label: "Last Listened To", value: "—" };
 
-    const nowPlaying = !!item?.["@attr"]?.nowplaying;
-    const track = decodeEntities(item?.name || "—");
-    const artist = decodeEntities(item?.artist?.["#text"] || item?.artist?.name || "");
+    const track = item?.name ? String(item.name).trim() : "—";
+    const artist =
+      item?.artist?.["#text"] ? String(item.artist["#text"]).trim() :
+      item?.artist?.name ? String(item.artist.name).trim() :
+      "—";
 
+    const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
     return {
       label: nowPlaying ? "Now Listening To" : "Last Listened To",
-      track,
-      artist,
+      value: `${track} — ${artist}`.trim()
     };
   } catch {
-    return { label: "Last Listened To", track: "—", artist: "" };
+    return { label: "Last Listened To", value: "—" };
   }
 }
 
-function makeSvg({ lastRead, lastWatched, listening }) {
-  // Styling: Times New Roman vibe, warm brown like your theme snippet (#613d12)
+function buildSvg({ lastRead, lastWatched, listenLabel, listenValue }) {
+  // Theme-ish styling (you can tweak these 3 constants anytime)
+  const width = 520;
+  const height = 120;
+
   const fontFamily = "Times New Roman, Times, serif";
-  const fill = "#613d12";
-  const opacity = "1";
+  const fontSize = 14;
+  const fill = "#613d12"; // your brown
+  const opacity = 1;
 
-  const line1 =
-    `Last Read: ${lastRead.book}` + (lastRead.author ? ` — ${lastRead.author}` : "");
-  const line2 =
-    `Last Watched: ${lastWatched.film}` + (lastWatched.year ? ` (${lastWatched.year})` : "");
-  const line3 =
-    `${listening.label}: ${listening.track}` + (listening.artist ? ` — ${listening.artist}` : "");
-
-  // SVG size: adjust if you want wider
-  const width = 360;
-  const height = 70;
+  const line1 = `Last Read: ${lastRead}`;
+  const line2 = `Last Watched: ${lastWatched}`;
+  const line3 = `${listenLabel}: ${listenValue}`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Now Playing Widget">
-  <style>
-    .t {
-      font-family: ${fontFamily};
-      font-size: 13px;
-      fill: ${fill};
-      fill-opacity: ${opacity};
-      letter-spacing: 0.2px;
-    }
-  </style>
-
-  <text class="t" x="0" y="18">${escapeXml(line1)}</text>
-  <text class="t" x="0" y="40">${escapeXml(line2)}</text>
-  <text class="t" x="0" y="62">${escapeXml(line3)}</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="eneremit widget">
+  <rect width="100%" height="100%" fill="transparent"/>
+  <text x="0" y="30" font-family="${fontFamily}" font-size="${fontSize}" fill="${fill}" fill-opacity="${opacity}">
+    ${esc(line1)}
+  </text>
+  <text x="0" y="60" font-family="${fontFamily}" font-size="${fontSize}" fill="${fill}" fill-opacity="${opacity}">
+    ${esc(line2)}
+  </text>
+  <text x="0" y="90" font-family="${fontFamily}" font-size="${fontSize}" fill="${fill}" fill-opacity="${opacity}">
+    ${esc(line3)}
+  </text>
 </svg>`;
 }
 
-async function main() {
+(async function main() {
   const [lastRead, lastWatched, listening] = await Promise.all([
-    getGoodreadsLastRead(),
-    getLetterboxdLastWatched(),
-    getLastfmListening(),
+    getLastRead(),
+    getLastWatched(),
+    getListeningLine()
   ]);
 
-  const svg = makeSvg({ lastRead, lastWatched, listening });
+  const svg = buildSvg({
+    lastRead,
+    lastWatched,
+    listenLabel: listening.label,
+    listenValue: listening.value
+  });
+
   fs.writeFileSync("now-playing.svg", svg, "utf8");
   console.log("Wrote now-playing.svg");
-}
-
-main().catch((err) => {
-  console.error("Error:", err);
+})().catch((err) => {
+  console.error(err);
   process.exit(1);
 });
