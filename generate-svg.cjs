@@ -1,6 +1,6 @@
 // generate-svg.cjs
-// Generates now-playing.svg (3 lines) sized for Tumblr sidebar.
-// Labels stay normal; Values auto-fit (no clipping) using textLength.
+// Generates now-playing.svg (Read / Watched / Listened)
+// Values wrap onto a second line when long (no clipping, no squishing)
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -13,7 +13,7 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE (Tumblr sidebar tuned) ---------
 const STYLE = {
-  width: 270,              // match sidebar so Tumblr doesn't scale it weirdly
+  width: 270, // keep aligned with sidebar width
   paddingLeft: 0,
   paddingRight: 0,
   paddingTop: 18,
@@ -21,15 +21,16 @@ const STYLE = {
 
   fontFamily: "Times New Roman, Times, serif",
   fontSize: 16,
-  lineGap: 24,
   letterSpacing: "0.3px",
 
   labelColor: "#222222",
   valueColor: "#613d12",
 
-  // Reserve a fixed label width so value always has predictable space.
-  // This prevents clipping even when we "fit" the value.
-  labelWidthPx: 128,       // tweakable, but this works well for "Last Listened To:"
+  // Layout
+  labelWidthPx: 128,     // space reserved for "Last Listened To:"
+  gapPx: 6,              // space between label and value
+  lineGap: 24,           // vertical distance between rendered lines
+  maxLinesPerSection: 2, // wrap value to at most 2 lines
 };
 
 const parser = new XMLParser({ ignoreAttributes: false });
@@ -41,7 +42,7 @@ function escapeXml(str = "") {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+    .replaceAll("'", "&apos;"); // keep XML valid
 }
 
 async function fetchText(url) {
@@ -70,6 +71,35 @@ function splitLabelValue(lineText) {
     label: lineText.slice(0, idx + 1).trim(),
     value: lineText.slice(idx + 1).trimStart(),
   };
+}
+
+// Approx width-per-character estimate for Times at 16px.
+// This is not perfect typography math, but good enough for 2-line wrapping.
+function approxCharsThatFit(pxWidth) {
+  // Times New Roman average glyph width ~0.52em-ish; at 16px that's ~8.3px
+  const approxPxPerChar = 8.2;
+  return Math.max(10, Math.floor(pxWidth / approxPxPerChar));
+}
+
+function wrapToTwoLines(value, maxCharsPerLine) {
+  const text = (value || "—").trim();
+  if (!text) return ["—"];
+
+  if (text.length <= maxCharsPerLine) return [text];
+
+  // try to wrap at a space before the limit
+  const cut = text.lastIndexOf(" ", maxCharsPerLine);
+  const first = (cut > 20 ? text.slice(0, cut) : text.slice(0, maxCharsPerLine)).trim();
+
+  let rest = text.slice(first.length).trim();
+  if (!rest) return [first];
+
+  // second line: keep as-is; if absurdly long, end with ellipsis
+  if (rest.length > maxCharsPerLine) {
+    rest = rest.slice(0, Math.max(0, maxCharsPerLine - 1)).trimEnd() + "…";
+  }
+
+  return [first, rest];
 }
 
 // ---------- Last.fm ----------
@@ -104,7 +134,7 @@ async function getLastfmLine() {
 // ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
   const t = rawTitle.trim();
-  const clean = t.split(" - ")[0].trim(); // drop rating suffix etc.
+  const clean = t.split(" - ")[0].trim();
 
   const m = clean.match(/^(.+?),\s*(\d{4})/);
   if (m) return `${m[1].trim()} (${m[2].trim()})`;
@@ -146,8 +176,8 @@ async function getGoodreadsLatest() {
     .filter(Boolean);
 
   let author = authorCandidates[0] || "";
-
   let title = rawTitle;
+
   if (/ by /i.test(rawTitle)) {
     const parts = rawTitle.split(/ by /i);
     title = parts[0].trim();
@@ -168,43 +198,59 @@ function renderSvg(lines) {
     paddingRight,
     paddingTop,
     paddingBottom,
-    fontSize,
-    lineGap,
     fontFamily,
+    fontSize,
     letterSpacing,
     labelColor,
     valueColor,
     labelWidthPx,
+    gapPx,
+    lineGap,
+    maxLinesPerSection,
   } = STYLE;
 
-  const height = paddingTop + paddingBottom + lineGap * lines.length;
-
-  // value gets whatever room remains after labelWidthPx (+ a small gap)
-  const gapPx = 6;
   const valueX = paddingLeft + labelWidthPx + gapPx;
-  const valueWidth = Math.max(40, width - paddingRight - valueX); // never go negative
+  const valueWidth = Math.max(40, width - paddingRight - valueX);
+  const maxChars = approxCharsThatFit(valueWidth);
 
-  const rendered = lines
-    .map((line, i) => {
-      const y = paddingTop + (i + 1) * lineGap;
+  // Build rendered blocks and count how many total lines we need
+  const blocks = lines.map((line) => {
+    const { label, value } = splitLabelValue(line.text);
+    const wrapped = wrapToTwoLines(value || "—", maxChars).slice(0, maxLinesPerSection);
+    return { label: label || "", wrapped, link: line.link || null };
+  });
 
-      const { label, value } = splitLabelValue(line.text);
-      const safeLabel = escapeXml(label || "");
-      const safeValue = escapeXml(value || "—");
+  const totalRenderedLines = blocks.reduce((sum, b) => sum + Math.max(1, b.wrapped.length), 0);
+  const height = paddingTop + paddingBottom + totalRenderedLines * lineGap;
+
+  let cursorLine = 0;
+
+  const rendered = blocks
+    .map((b) => {
+      const labelSafe = escapeXml(b.label);
+
+      // First line of section includes label + first value line
+      const firstY = paddingTop + (cursorLine + 1) * lineGap;
+      const firstValue = escapeXml(b.wrapped[0] || "—");
+
+      // Optional second line is value-only (indented to valueX)
+      const secondLine = b.wrapped[1] ? escapeXml(b.wrapped[1]) : "";
+
+      cursorLine += Math.max(1, b.wrapped.length);
 
       const textNode = `
-  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">
-    <tspan class="label">${safeLabel}</tspan>
-    <tspan
-      class="value"
-      x="${valueX}"
-      textLength="${valueWidth}"
-      lengthAdjust="spacingAndGlyphs"
-    >${safeValue}</tspan>
+  <text x="${paddingLeft}" y="${firstY}" class="line" text-anchor="start">
+    <tspan class="label">${labelSafe}</tspan>
+    <tspan class="value" x="${valueX}">${firstValue}</tspan>
+    ${
+      secondLine
+        ? `\n    <tspan class="value" x="${valueX}" dy="${lineGap}">${secondLine}</tspan>`
+        : ""
+    }
   </text>`;
 
-      if (line.link) {
-        const safeLink = escapeXml(line.link);
+      if (b.link) {
+        const safeLink = escapeXml(b.link);
         return `
   <a href="${safeLink}" target="_blank" rel="noopener noreferrer">
     ${textNode}
