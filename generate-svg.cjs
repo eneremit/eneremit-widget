@@ -1,6 +1,6 @@
 // generate-svg.cjs
 // Generates now-playing.svg (Read / Watched / Listened)
-// Values wrap onto a second line when long (no clipping, no squishing)
+// Values stay on ONE line unless actually long; then wrap to a second line (no clipping).
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -13,7 +13,7 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE (Tumblr sidebar tuned) ---------
 const STYLE = {
-  width: 270, // keep aligned with sidebar width
+  width: 270, // match sidebar width (prevents Tumblr scaling weirdness)
   paddingLeft: 0,
   paddingRight: 0,
   paddingTop: 18,
@@ -23,13 +23,15 @@ const STYLE = {
   fontSize: 16,
   letterSpacing: "0.3px",
 
+  // your Tumblr colors:
   labelColor: "#222222",
   valueColor: "#613d12",
 
   // Layout
-  labelWidthPx: 128,     // space reserved for "Last Listened To:"
-  gapPx: 6,              // space between label and value
-  lineGap: 24,           // vertical distance between rendered lines
+  // IMPORTANT: reserve LESS space for the label so short values don't get forced to line 2
+  labelWidthPx: 108,     // was 128 (too wide)
+  gapPx: 6,
+  lineGap: 24,
   maxLinesPerSection: 2, // wrap value to at most 2 lines
 };
 
@@ -42,11 +44,7 @@ function escapeXml(str = "") {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;"); // keep XML valid
-}
-
-function cleanText(s = "") {
-  return String(s).replace(/\s+/g, " ").trim();
+    .replaceAll("'", "&apos;");
 }
 
 async function fetchText(url) {
@@ -78,61 +76,48 @@ function splitLabelValue(lineText) {
 }
 
 // Approx width-per-character estimate for Times at 16px.
-// This is not perfect typography math, but good enough for 2-line wrapping.
+// We bias this a bit LOWER so it doesn't wrap too aggressively.
 function approxCharsThatFit(pxWidth) {
-  // Times New Roman average glyph width ~0.52em-ish; at 16px that's ~8.3px
-  const approxPxPerChar = 8.2;
-  return Math.max(10, Math.floor(pxWidth / approxPxPerChar));
+  const approxPxPerChar = 7.0; // was ~8.2 (too pessimistic)
+  return Math.max(12, Math.floor(pxWidth / approxPxPerChar));
 }
 
-function ellipsizeTo(text, maxChars) {
-  const t = cleanText(text);
-  if (!t) return "—";
-  if (t.length <= maxChars) return t;
-  const cut = t.slice(0, Math.max(0, maxChars - 1)).trimEnd();
-  const lastSpace = cut.lastIndexOf(" ");
-  const safe = lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
-  return safe + "…";
-}
-
-/**
- * Wrap rule:
- * - If it fits in one line: keep it ONE line.
- * - If it doesn’t fit:
- *    1) Prefer splitting at " — " (Track/Title on line1, Artist/Author on line2)
- *    2) Otherwise split at nearest space before limit
- * - Never clip by cutting the last letters off; second line gets ellipsis if needed.
- */
-function wrapToTwoLines(value, maxCharsPerLine) {
-  const text = cleanText(value || "—");
+function wrapValueSmart(value, maxCharsPerLine) {
+  const text = (value || "—").trim();
   if (!text) return ["—"];
 
-  // 1) If it fits, DO NOT WRAP.
-  if (text.length <= maxCharsPerLine) return [text];
+  // Buffer: don't wrap unless we're clearly over the limit.
+  // This prevents dumb wraps like "DANCE... — Slayyter"
+  const softLimit = maxCharsPerLine + 10;
 
-  // 2) Prefer splitting at " — " if present and helpful.
-  const dashIdx = text.indexOf(" — ");
-  if (dashIdx > 0) {
-    const left = cleanText(text.slice(0, dashIdx));
-    const right = cleanText(text.slice(dashIdx + 3)); // after " — "
-    // Keep left as a full first line (ellipsize only if insanely long)
-    const first = ellipsizeTo(left, maxCharsPerLine);
-    // Second line gets the right side (ellipsize if needed)
-    const second = ellipsizeTo(right, maxCharsPerLine);
-    return [first || "—", second || "—"];
+  if (text.length <= softLimit) return [text];
+
+  // Try to wrap at best breakpoint before the hard limit
+  const hardLimit = maxCharsPerLine;
+
+  const breakpoints = [" — ", " - ", ": ", "; ", ", ", " "];
+  let cut = -1;
+
+  for (const bp of breakpoints) {
+    const idx = text.lastIndexOf(bp, hardLimit);
+    if (idx > cut && idx > 20) cut = idx + (bp === " " ? 0 : bp.length);
   }
 
-  // 3) Fallback: wrap at a space before the limit.
-  const cut = text.lastIndexOf(" ", maxCharsPerLine);
-  const first = (cut > 20 ? text.slice(0, cut) : text.slice(0, maxCharsPerLine)).trim();
+  if (cut < 0) {
+    // fallback: wrap at hard limit
+    cut = hardLimit;
+  }
 
-  let rest = text.slice(first.length).trim();
-  if (!rest) return [first || "—"];
+  const first = text.slice(0, cut).trim();
+  let rest = text.slice(cut).trim();
+  if (!rest) return [first];
 
-  // Second line: if too long, ellipsize cleanly
-  rest = ellipsizeTo(rest, maxCharsPerLine);
+  // Second line: if still huge, ellipsis
+  if (rest.length > hardLimit) {
+    rest = rest.slice(0, Math.max(0, hardLimit - 1)).trimEnd() + "…";
+  }
 
-  return [first || "—", rest || "—"];
+  return [first, rest];
 }
 
 // ---------- Last.fm ----------
@@ -153,8 +138,8 @@ async function getLastfmLine() {
   const item = data?.recenttracks?.track?.[0];
   if (!item) return { text: "Last Listened To: —", link: null };
 
-  const track = cleanText(item.name || "");
-  const artist = cleanText(item.artist?.["#text"] || item.artist?.name || "");
+  const track = (item.name || "").trim();
+  const artist = (item.artist?.["#text"] || item.artist?.name || "").trim();
   const link = (item.url || "").trim() || null;
 
   const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
@@ -166,7 +151,7 @@ async function getLastfmLine() {
 
 // ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
-  const t = cleanText(rawTitle);
+  const t = rawTitle.trim();
   const clean = t.split(" - ")[0].trim();
 
   const m = clean.match(/^(.+?),\s*(\d{4})/);
@@ -201,11 +186,11 @@ async function getGoodreadsLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
-  const rawTitle = cleanText(item.title || "");
+  const rawTitle = (item.title || "").trim();
   const link = (item.link || "").trim() || null;
 
   const authorCandidates = [item.author_name, item.author, item["dc:creator"], item.creator]
-    .map((v) => (typeof v === "string" ? cleanText(v) : ""))
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter(Boolean);
 
   let author = authorCandidates[0] || "";
@@ -213,8 +198,8 @@ async function getGoodreadsLatest() {
 
   if (/ by /i.test(rawTitle)) {
     const parts = rawTitle.split(/ by /i);
-    title = cleanText(parts[0] || "");
-    if (!author) author = cleanText(parts.slice(1).join(" by "));
+    title = parts[0].trim();
+    if (!author) author = parts.slice(1).join(" by ").trim();
   }
 
   if (!title) return { text: "Last Read: —", link };
@@ -243,13 +228,12 @@ function renderSvg(lines) {
   } = STYLE;
 
   const valueX = paddingLeft + labelWidthPx + gapPx;
-  const valueWidth = Math.max(40, width - paddingRight - valueX);
+  const valueWidth = Math.max(60, width - paddingRight - valueX);
   const maxChars = approxCharsThatFit(valueWidth);
 
-  // Build rendered blocks and count how many total lines we need
   const blocks = lines.map((line) => {
     const { label, value } = splitLabelValue(line.text);
-    const wrapped = wrapToTwoLines(value || "—", maxChars).slice(0, maxLinesPerSection);
+    const wrapped = wrapValueSmart(value || "—", maxChars).slice(0, maxLinesPerSection);
     return { label: label || "", wrapped, link: line.link || null };
   });
 
@@ -261,12 +245,9 @@ function renderSvg(lines) {
   const rendered = blocks
     .map((b) => {
       const labelSafe = escapeXml(b.label);
-
-      // First line of section includes label + first value line
       const firstY = paddingTop + (cursorLine + 1) * lineGap;
-      const firstValue = escapeXml(b.wrapped[0] || "—");
 
-      // Optional second line is value-only (indented to valueX)
+      const firstValue = escapeXml(b.wrapped[0] || "—");
       const secondLine = b.wrapped[1] ? escapeXml(b.wrapped[1]) : "";
 
       cursorLine += Math.max(1, b.wrapped.length);
@@ -274,8 +255,7 @@ function renderSvg(lines) {
       const textNode = `
   <text x="${paddingLeft}" y="${firstY}" class="line" text-anchor="start">
     <tspan class="label">${labelSafe}</tspan>
-    <tspan class="value" x="${valueX}">${firstValue}</tspan>
-    ${
+    <tspan class="value" x="${valueX}">${firstValue}</tspan>${
       secondLine
         ? `\n    <tspan class="value" x="${valueX}" dy="${lineGap}">${secondLine}</tspan>`
         : ""
