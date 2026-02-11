@@ -19,9 +19,9 @@
     
   <text x="0" y="42" class="line" text-anchor="start">
     <tspan class="label">Last Read:</tspan>
-    <tspan class="value" x="134">Fear Itself — St</tspan>
+    <tspan class="value" x="134">Fear Itself</tspan>
     
-    <tspan class="value" x="134" dy="24">an Rice</tspan>
+    <tspan class="value" x="134" dy="24">Stan Rice</tspan>
   </text>
   </a>
 
@@ -38,9 +38,9 @@
     
   <text x="0" y="114" class="line" text-anchor="start">
     <tspan class="label">Last Listened To:</tspan>
-    <tspan class="value" x="134">DANCE... — Slayy</tspan>
+    <tspan class="value" x="134">DANCE...</tspan>
     
-    <tspan class="value" x="134" dy="24">yter</tspan>
+    <tspan class="value" x="134" dy="24">Slayyyter</tspan>
   </text>
   </a>
 </svg>
