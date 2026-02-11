@@ -32,8 +32,11 @@
   </text>
   </a>
 
+  <a href="https://www.last.fm/music/Robyn/_/Sexistential" target="_blank" rel="noopener noreferrer">
+    
   <text x="0" y="90" class="line" text-anchor="start">
     <tspan class="label">Last Listened To:</tspan>
-    <tspan class="value"> —</tspan>
+    <tspan class="value"> Sexistential — Robyn</tspan>
   </text>
+  </a>
 </svg>
