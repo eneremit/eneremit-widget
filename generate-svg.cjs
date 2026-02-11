@@ -12,22 +12,22 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE tuned for Tumblr sidebar ---------
 const STYLE = {
-  width: 270,          // IMPORTANT: match sidebar width so it doesn't get scaled down
+  width: 270, // IMPORTANT: match sidebar width so it doesn't get scaled down
   paddingLeft: 0,
   paddingTop: 18,
   paddingBottom: 14,
 
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 16,        // bigger than before
-  lineGap: 24,         // more breathing room
+  fontSize: 16, // bigger than before
+  lineGap: 24, // more breathing room
 
   labelColor: "#222222",
   valueColor: "#613d12",
   letterSpacing: "0.3px",
 
-  // how much of the VALUE text to keep (book/movie/song part)
-  // increase if you want, but this is already pretty generous for 270px width.
-  maxValueChars: 60,
+  // VALUE is the book/movie/song part (not the label).
+  // 60 was too long for 270px, so we clamp harder to avoid visual clipping.
+  maxValueChars: 42,
 };
 
 const parser = new XMLParser({ ignoreAttributes: false });
@@ -71,7 +71,10 @@ function pickFirstItem(rssParsed) {
 function splitLabelValue(lineText) {
   const idx = lineText.indexOf(":");
   if (idx === -1) return { label: lineText, value: "" };
-  return { label: lineText.slice(0, idx + 1), value: lineText.slice(idx + 1).trimStart() };
+  return {
+    label: lineText.slice(0, idx + 1),
+    value: lineText.slice(idx + 1).trimStart(),
+  };
 }
 
 // ---------- Last.fm ----------
@@ -242,6 +245,10 @@ ${rendered}
     fs.writeFileSync("now-playing.svg", svg, "utf8");
     console.log("Wrote now-playing.svg");
   } catch (err) {
+    console.error("Failed to generate SVG:", err);
+    process.exit(1);
+  }
+})();
     console.error("Failed to generate SVG:", err);
     process.exit(1);
   }
