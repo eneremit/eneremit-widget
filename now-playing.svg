@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="440" height="186"
-     viewBox="0 0 440 186"
-     shape-rendering="geometricPrecision"
-     text-rendering="geometricPrecision">
+     width="440" height="176"
+     viewBox="0 0 440 176">
   <style>
     .line {
       font-family: Times New Roman, Times, serif;
@@ -24,25 +22,22 @@
 
   <a href="https://www.goodreads.com/review/show/5846417559?utm_medium=api&amp;utm_source=rss" target="_blank" rel="noopener noreferrer">
     
-  <text x="12" y="70" class="line" text-anchor="start">
-    <tspan class="label">Last Read:</tspan>
-    <tspan class="value"> Fear Itself — Stan Rice</tspan>
+  <text x="12" y="30" class="line" text-anchor="start">
+    <tspan class="label">Last Read:</tspan><tspan class="value"> Fear Itself — Stan Rice</tspan>
   </text>
   </a>
 
   <a href="https://letterboxd.com/eneremit/film/hamnet/" target="_blank" rel="noopener noreferrer">
     
-  <text x="12" y="110" class="line" text-anchor="start">
-    <tspan class="label">Last Watched:</tspan>
-    <tspan class="value"> Hamnet (2025)</tspan>
+  <text x="12" y="70" class="line" text-anchor="start">
+    <tspan class="label">Last Watched:</tspan><tspan class="value"> Hamnet (2025)</tspan>
   </text>
   </a>
 
   <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
     
-  <text x="12" y="150" class="line" text-anchor="start">
-    <tspan class="label">Last Listened To:</tspan>
-    <tspan class="value"> DANCE... — Slayyyter</tspan>
+  <text x="12" y="110" class="line" text-anchor="start">
+    <tspan class="label">Last Listened To:</tspan><tspan class="value"> DANCE... — Slayyyter</tspan>
   </text>
   </a>
 </svg>
