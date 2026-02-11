@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      width="270" height="152"
-     viewBox="0 0 270 152"
-     overflow="visible">
+     viewBox="0 0 270 152">
   <style>
     .line {
       font-family: Times New Roman, Times, serif;
@@ -20,8 +19,8 @@
     
   <text x="0" y="42" class="line" text-anchor="start">
     <tspan class="label">Last Read:</tspan>
-    <tspan class="value" x="126">Fear Itself — St</tspan>
-    <tspan class="value" x="126" dy="24">an Rice</tspan>
+    <tspan class="value" dx="6">Fear Itself</tspan>
+    <tspan class="value" x="0" dy="24">— Stan Rice</tspan>
   </text>
   </a>
 
@@ -29,7 +28,7 @@
     
   <text x="0" y="90" class="line" text-anchor="start">
     <tspan class="label">Last Watched:</tspan>
-    <tspan class="value" x="126">Hamnet (2025)</tspan>
+    <tspan class="value" dx="6">Hamnet (2025)</tspan>
   </text>
   </a>
 
@@ -37,8 +36,8 @@
     
   <text x="0" y="114" class="line" text-anchor="start">
     <tspan class="label">Last Listened To:</tspan>
-    <tspan class="value" x="126">DANCE... — Slayy</tspan>
-    <tspan class="value" x="126" dy="24">yter</tspan>
+    <tspan class="value" dx="6">DANCE...</tspan>
+    <tspan class="value" x="0" dy="24">— Slayyyter</tspan>
   </text>
   </a>
 </svg>
