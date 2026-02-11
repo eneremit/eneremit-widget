@@ -1,32 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="120" viewBox="0 0 520 120">
-  <rect x="0" y="0" width="520" height="120" fill="transparent" />
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="360" height="54" viewBox="0 0 360 54">
+  <rect width="100%" height="100%" fill="transparent"/>
 
-  <style>
-    .t { font-family: Times New Roman, Times, serif; font-size: 15px; dominant-baseline: alphabetic; }
-    .label { fill: #2c2c2c; opacity: 0.55; }
-    .value { fill: #2c2c2c; opacity: 0.95; }
-    a:hover .value { opacity: 1; text-decoration: underline; }
-  </style>
-
-  <a href="https://www.goodreads.com/" target="_blank" rel="noopener noreferrer">
-    <text class="t" x="18" y="35">
-      <tspan class="label">Last Read: </tspan>
-      <tspan class="value">—</tspan>
+  <a xlink:href="https://www.goodreads.com/user/show/138343303" target="_blank">
+    <text x="0" y="18"
+      font-family="Times New Roman, Times, serif"
+      font-size="13"
+      font-weight="400"
+      fill="#613d12"
+      fill-opacity="1">
+      Last Read: Fear Itself — Stan Rice
     </text>
   </a>
 
-  <a href="https://letterboxd.com/" target="_blank" rel="noopener noreferrer">
-    <text class="t" x="18" y="57">
-      <tspan class="label">Last Watched: </tspan>
-      <tspan class="value">—</tspan>
+  <a xlink:href="https://letterboxd.com/eneremit/" target="_blank">
+    <text x="0" y="36"
+      font-family="Times New Roman, Times, serif"
+      font-size="13"
+      font-weight="400"
+      fill="#613d12"
+      fill-opacity="1">
+      Last Watched: —
     </text>
   </a>
 
-  <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
-    <text class="t" x="18" y="79">
-      <tspan class="label">Last Listened To: </tspan>
-      <tspan class="value">DANCE... — Slayyyter</tspan>
+  <a xlink:href="https://www.last.fm/user/eneremit" target="_blank">
+    <text x="0" y="54"
+      font-family="Times New Roman, Times, serif"
+      font-size="13"
+      font-weight="400"
+      fill="#613d12"
+      fill-opacity="1">
+      Last Listened To: DANCE... — Slayyyter
     </text>
   </a>
 </svg>
