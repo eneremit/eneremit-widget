@@ -1,245 +1,282 @@
 // generate-svg.cjs
-// 3 lines, styled to match your Tumblr theme (Times New Roman, small size, brown labels)
+// Generates now-playing.svg with 3 lines:
+// Last Read: Title — Author
+// Last Watched: Movie (YEAR) — Director
+// Now Listening To / Last Listened To: Track — Artist
+//
+// Requires: npm i fast-xml-parser
+// Node 20+ (GitHub Actions runner) has fetch built-in.
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
 
-// --------- REQUIRED ENV VARS ---------
 const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
 const LASTFM_USER = process.env.LASTFM_USER;
 
-const GOODREADS_RSS = process.env.GOODREADS_RSS;   // e.g. https://www.goodreads.com/review/list_rss/138343303?shelf=read
-const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS; // your Letterboxd RSS link
+const GOODREADS_RSS_URL = process.env.GOODREADS_RSS_URL;     // e.g. https://www.goodreads.com/review/list_rss/138343303?shelf=read
+const LETTERBOXD_RSS_URL = process.env.LETTERBOXD_RSS_URL;   // e.g. your letterboxd RSS feed url
 
-// --------- STYLE: tuned to match your blog/player ---------
-const STYLE = {
-  width: 320,
-  paddingX: 10,
-  paddingY: 20,
-  lineGap: 18,
+// ---- STYLE (tweak these) ----
+const FONT_FAMILY = "Times New Roman, Times, serif";
+const FONT_SIZE_PX = 15;          // <-- MAKE IT BIGGER/SMALLER HERE (try 15, 16, 17)
+const LINE_GAP_PX = 22;           // distance between lines (increase if you increase font size)
+const PADDING_X = 18;
+const PADDING_Y = 20;
+const SVG_WIDTH = 520;            // layout width inside the SVG
+const SVG_HEIGHT = 120;           // should fit 3 lines comfortably
+const TEXT_COLOR = "#2c2c2c";
+const LABEL_OPACITY = 0.55;
+const VALUE_OPACITY = 0.95;
 
-  fontFamily: "Times New Roman, Times, serif",
-
-  // Your theme text often reads smaller in practice. 11px usually matches better in SVG.
-  fontSize: 11,
-
-  // Your player label color
-  labelColor: "#613d12",
-
-  // Your theme text color
-  valueColor: "#000000",
-
-  // match "artist-name" feel
-  valueLetterSpacing: "0.3px",
-
-  // label spacing: set to "1.3px" if you want that more stylized look
-  labelLetterSpacing: "0.3px",
-
-  opacity: 1,
-};
-
-const parser = new XMLParser({ ignoreAttributes: false });
-
+// Helper: safe XML text
 function escapeXml(str = "") {
   return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 async function fetchText(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget" } });
+  if (!url) return "";
+  const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget/1.0" } });
   if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
   return await res.text();
 }
 
-async function fetchJson(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget" } });
-  if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
-  return await res.json();
+function parseRss(xmlText) {
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_",
+    // Goodreads/Letterboxd can have namespaces; keep them:
+    removeNSPrefix: false,
+  });
+  return parser.parse(xmlText);
 }
 
-function pickFirstItem(rssParsed) {
-  const channel = rssParsed?.rss?.channel;
-  let item = channel?.item;
-  if (Array.isArray(item)) item = item[0];
-  return item || null;
-}
+function firstItemFromRss(parsed) {
+  const channel =
+    parsed?.rss?.channel ||
+    parsed?.feed || // sometimes Atom-ish
+    parsed?.["rdf:RDF"]?.channel;
 
-// --------- Last.fm ---------
-async function getLastfmLine() {
-  if (!LASTFM_API_KEY || !LASTFM_USER) return { text: "Last Listened To: —", link: null };
-
-  const url =
-    "https://ws.audioscrobbler.com/2.0/?" +
-    new URLSearchParams({
-      method: "user.getrecenttracks",
-      user: LASTFM_USER,
-      api_key: LASTFM_API_KEY,
-      format: "json",
-      limit: "1",
-    }).toString();
-
-  const data = await fetchJson(url);
-  const item = data?.recenttracks?.track?.[0];
-  if (!item) return { text: "Last Listened To: —", link: null };
-
-  const track = (item.name || "").trim();
-  const artist = (item.artist?.["#text"] || item.artist?.name || "").trim();
-  const link = (item.url || "").trim() || null;
-
-  const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
-  const label = nowPlaying ? "Now Listening To" : "Last Listened To";
-  const value = [track, artist].filter(Boolean).join(" — ").trim();
-
-  return { text: `${label}: ${value || "—"}`, link };
-}
-
-// --------- Letterboxd ---------
-function parseLetterboxdTitle(rawTitle = "") {
-  const t = rawTitle.trim();
-  const noRating = t.split(" - ")[0].trim();
-
-  const m = noRating.match(/^(.+?),\s*(\d{4})(?:\b|$)/);
-  if (m) return `${m[1].trim()} (${m[2].trim()})`;
-
-  const p = noRating.match(/^(.+?)\s*\((\d{4})\)\s*$/);
-  if (p) return `${p[1].trim()} (${p[2].trim()})`;
-
-  return noRating || "—";
-}
-
-async function getLetterboxdLatest() {
-  if (!LETTERBOXD_RSS) return { text: "Last Watched: —", link: null };
-
-  const xml = await fetchText(LETTERBOXD_RSS);
-  const parsed = parser.parse(xml);
-  const item = pickFirstItem(parsed);
-  if (!item) return { text: "Last Watched: —", link: null };
-
-  const movie = parseLetterboxdTitle((item.title || "").trim());
-  const link = (item.link || "").trim() || null;
-  return { text: `Last Watched: ${movie || "—"}`, link };
-}
-
-// --------- Goodreads ---------
-async function getGoodreadsLatest() {
-  if (!GOODREADS_RSS) return { text: "Last Read: —", link: null };
-
-  const xml = await fetchText(GOODREADS_RSS);
-  const parsed = parser.parse(xml);
-  const item = pickFirstItem(parsed);
-  if (!item) return { text: "Last Read: —", link: null };
-
-  const rawTitle = (item.title || "").trim();
-  const link = (item.link || "").trim() || null;
-
-  const authorCandidates = [
-    item.author_name,
-    item.author,
-    item["dc:creator"],
-    item.creator,
-  ]
-    .map((v) => (typeof v === "string" ? v.trim() : ""))
-    .filter(Boolean);
-
-  let author = authorCandidates[0] || "";
-
-  if (!author && / by /i.test(rawTitle)) {
-    const parts = rawTitle.split(/ by /i);
-    if (parts.length >= 2) author = parts.slice(1).join(" by ").trim();
+  // RSS 2.0
+  if (channel?.item) {
+    const items = Array.isArray(channel.item) ? channel.item : [channel.item];
+    return items[0] || null;
   }
 
-  let title = rawTitle;
-  if (/ by /i.test(rawTitle)) title = rawTitle.split(/ by /i)[0].trim();
+  // Atom
+  if (parsed?.feed?.entry) {
+    const entries = Array.isArray(parsed.feed.entry) ? parsed.feed.entry : [parsed.feed.entry];
+    return entries[0] || null;
+  }
 
-  if (!title) return { text: "Last Read: —", link };
-  const authorText = author ? ` — ${author}` : "";
-  return { text: `Last Read: ${title}${authorText}`, link };
+  return null;
 }
 
-// --------- SVG render (label/value styled separately) ---------
-function splitLabelValue(lineText) {
-  const idx = lineText.indexOf(":");
-  if (idx === -1) return { label: lineText, value: "" };
+// ---------- GOODREADS ----------
+function extractGoodreadsTitleAuthor(item) {
+  // Goodreads RSS commonly gives title like: "The Little Prince by Antoine de Saint-Exupéry"
+  // Sometimes author can appear in dc:creator or author_name depending on feed variant.
+  const rawTitle = item?.title ? String(item.title) : "";
+  const dcCreator = item?.["dc:creator"] ? String(item["dc:creator"]) : "";
+  const authorName = item?.author_name ? String(item.author_name) : "";
+  const authorField = dcCreator || authorName;
+
+  // Try " by " split first
+  if (rawTitle.includes(" by ")) {
+    const [t, a] = rawTitle.split(" by ");
+    const title = (t || "").trim();
+    const author = (a || "").trim();
+    if (title) return { title, author: author || authorField || "—" };
+  }
+
+  // Sometimes title may be just title, author elsewhere
+  const title = rawTitle.trim();
+  const author = authorField.trim();
+
   return {
-    label: lineText.slice(0, idx + 1), // keep the colon
-    value: lineText.slice(idx + 1).trimStart(),
+    title: title || "—",
+    author: author || "—",
   };
 }
 
+// ---------- LETTERBOXD ----------
+function formatMovieTitleYear(rawTitle) {
+  // Convert "Hamnet, 2025" -> "Hamnet (2025)"
+  const t = (rawTitle || "").trim();
+  const m = t.match(/^(.*?),\s*(\d{4})$/);
+  if (m) return `${m[1].trim()} (${m[2]})`;
+  return t || "—";
+}
+
+async function extractLetterboxdDirectorFromFilmPage(filmUrl) {
+  if (!filmUrl) return "—";
+  try {
+    const html = await fetchText(filmUrl);
+
+    // Letterboxd pages usually include JSON-LD with director(s)
+    const scriptMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (!scriptMatch) return "—";
+
+    const jsonText = scriptMatch[1].trim();
+
+    // Sometimes there are multiple JSON blocks or invalid trailing; be defensive:
+    let data;
+    try {
+      data = JSON.parse(jsonText);
+    } catch {
+      return "—";
+    }
+
+    // Look for director in common spots
+    const director = data?.director;
+    if (Array.isArray(director)) {
+      const names = director.map(d => d?.name).filter(Boolean);
+      return names[0] || "—";
+    }
+    if (director?.name) return director.name;
+
+    return "—";
+  } catch {
+    return "—";
+  }
+}
+
+// ---------- LAST.FM ----------
+async function getLastFmLine() {
+  if (!LASTFM_API_KEY || !LASTFM_USER) {
+    return { label: "Last Listened To:", value: "—", url: "https://www.last.fm/" };
+  }
+
+  const url =
+    `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks` +
+    `&user=${encodeURIComponent(LASTFM_USER)}` +
+    `&api_key=${encodeURIComponent(LASTFM_API_KEY)}` +
+    `&format=json&limit=1`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Last.fm request failed ${res.status}`);
+  const data = await res.json();
+
+  const track = data?.recenttracks?.track?.[0];
+  if (!track) return { label: "Last Listened To:", value: "—", url: `https://www.last.fm/user/${LASTFM_USER}` };
+
+  const isNowPlaying = !!track?.["@attr"]?.nowplaying;
+  const name = track?.name ? String(track.name) : "—";
+  const artist = track?.artist?.["#text"] ? String(track.artist["#text"]) : "—";
+  const trackUrl = track?.url ? String(track.url) : `https://www.last.fm/user/${LASTFM_USER}`;
+
+  return {
+    label: isNowPlaying ? "Now Listening To:" : "Last Listened To:",
+    value: `${name} — ${artist}`,
+    url: trackUrl,
+  };
+}
+
+// ---------- BUILD ALL 3 LINES ----------
+async function getGoodreadsLine() {
+  if (!GOODREADS_RSS_URL) return { label: "Last Read:", value: "—", url: "https://www.goodreads.com/" };
+
+  try {
+    const xml = await fetchText(GOODREADS_RSS_URL);
+    const parsed = parseRss(xml);
+    const item = firstItemFromRss(parsed);
+
+    if (!item) return { label: "Last Read:", value: "—", url: "https://www.goodreads.com/" };
+
+    const { title, author } = extractGoodreadsTitleAuthor(item);
+
+    // Prefer the book/review link if present
+    const link = item?.link ? String(item.link) : "https://www.goodreads.com/";
+    return { label: "Last Read:", value: `${title} — ${author}`, url: link };
+  } catch {
+    return { label: "Last Read:", value: "—", url: "https://www.goodreads.com/" };
+  }
+}
+
+async function getLetterboxdLine() {
+  if (!LETTERBOXD_RSS_URL) return { label: "Last Watched:", value: "—", url: "https://letterboxd.com/" };
+
+  try {
+    const xml = await fetchText(LETTERBOXD_RSS_URL);
+    const parsed = parseRss(xml);
+    const item = firstItemFromRss(parsed);
+
+    if (!item) return { label: "Last Watched:", value: "—", url: "https://letterboxd.com/" };
+
+    const rawTitle = item?.title ? String(item.title) : "—";
+    const filmUrl = item?.link ? String(item.link) : "https://letterboxd.com/";
+
+    const movieTitle = formatMovieTitleYear(rawTitle);
+    const director = await extractLetterboxdDirectorFromFilmPage(filmUrl);
+
+    // If director fetch fails, just show movie (year)
+    const value = director && director !== "—" ? `${movieTitle} — ${director}` : movieTitle;
+
+    return { label: "Last Watched:", value, url: filmUrl };
+  } catch {
+    return { label: "Last Watched:", value: "—", url: "https://letterboxd.com/" };
+  }
+}
+
+// ---------- SVG RENDER ----------
 function renderSvg(lines) {
-  const { width, paddingX, paddingY, lineGap } = STYLE;
-  const height = paddingY + lineGap * lines.length + 10;
+  const bg = "transparent"; // keep it clean for tumblr
+  const y1 = PADDING_Y + FONT_SIZE_PX;
+  const y2 = y1 + LINE_GAP_PX;
+  const y3 = y2 + LINE_GAP_PX;
 
-  const rendered = lines
-    .map((line, i) => {
-      const y = paddingY + i * lineGap;
-      const { label, value } = splitLabelValue(line.text);
+  const [l1, l2, l3] = lines;
 
-      const safeLabel = escapeXml(label);
-      const safeValue = escapeXml(value);
-
-      const textNode = `
-  <text x="${paddingX}" y="${y}" class="line">
-    <tspan class="label">${safeLabel}</tspan>
-    <tspan class="value">${safeValue ? " " + safeValue : " —"}</tspan>
-  </text>`;
-
-      if (line.link) {
-        const safeLink = escapeXml(line.link);
-        return `
-  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${textNode}
-  </a>`;
-      }
-      return textNode;
-    })
-    .join("\n");
-
+  // NOTE: per-line clicking works best when embedded as <object type="image/svg+xml"> (not <img>).
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
-     width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<svg xmlns="http://www.w3.org/2000/svg" width="${SVG_WIDTH}" height="${SVG_HEIGHT}" viewBox="0 0 ${SVG_WIDTH} ${SVG_HEIGHT}">
+  <rect x="0" y="0" width="${SVG_WIDTH}" height="${SVG_HEIGHT}" fill="${bg}" />
+
   <style>
-    .line {
-      font-family: ${STYLE.fontFamily};
-      font-size: ${STYLE.fontSize}px;
-      opacity: ${STYLE.opacity};
-    }
-    .label {
-      fill: ${STYLE.labelColor};
-      letter-spacing: ${STYLE.labelLetterSpacing};
-    }
-    .value {
-      fill: ${STYLE.valueColor};
-      letter-spacing: ${STYLE.valueLetterSpacing};
-    }
+    .t { font-family: ${FONT_FAMILY}; font-size: ${FONT_SIZE_PX}px; dominant-baseline: alphabetic; }
+    .label { fill: ${TEXT_COLOR}; opacity: ${LABEL_OPACITY}; }
+    .value { fill: ${TEXT_COLOR}; opacity: ${VALUE_OPACITY}; }
+    a:hover .value { opacity: 1; text-decoration: underline; }
   </style>
 
-  <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"/>
-${rendered}
+  <a href="${escapeXml(l1.url)}" target="_blank" rel="noopener noreferrer">
+    <text class="t" x="${PADDING_X}" y="${y1}">
+      <tspan class="label">${escapeXml(l1.label)} </tspan>
+      <tspan class="value">${escapeXml(l1.value)}</tspan>
+    </text>
+  </a>
+
+  <a href="${escapeXml(l2.url)}" target="_blank" rel="noopener noreferrer">
+    <text class="t" x="${PADDING_X}" y="${y2}">
+      <tspan class="label">${escapeXml(l2.label)} </tspan>
+      <tspan class="value">${escapeXml(l2.value)}</tspan>
+    </text>
+  </a>
+
+  <a href="${escapeXml(l3.url)}" target="_blank" rel="noopener noreferrer">
+    <text class="t" x="${PADDING_X}" y="${y3}">
+      <tspan class="label">${escapeXml(l3.label)} </tspan>
+      <tspan class="value">${escapeXml(l3.value)}</tspan>
+    </text>
+  </a>
 </svg>`;
 }
 
-// --------- main ---------
 (async function main() {
-  try {
-    const [goodreads, letterboxd, lastfm] = await Promise.allSettled([
-      getGoodreadsLatest(),
-      getLetterboxdLatest(),
-      getLastfmLine(),
-    ]);
+  const [gr, lb, fm] = await Promise.all([
+    getGoodreadsLine(),
+    getLetterboxdLine(),
+    getLastFmLine(),
+  ]);
 
-    const gr = goodreads.status === "fulfilled" ? goodreads.value : { text: "Last Read: —", link: null };
-    const lb = letterboxd.status === "fulfilled" ? letterboxd.value : { text: "Last Watched: —", link: null };
-    const lf = lastfm.status === "fulfilled" ? lastfm.value : { text: "Last Listened To: —", link: null };
-
-    const svg = renderSvg([gr, lb, lf]);
-    fs.writeFileSync("now-playing.svg", svg, "utf8");
-    console.log("Wrote now-playing.svg");
-  } catch (err) {
-    console.error("Failed to generate SVG:", err);
-    process.exit(1);
-  }
-})();
+  const svg = renderSvg([gr, lb, fm]);
+  fs.writeFileSync("now-playing.svg", svg, "utf8");
+  console.log("Wrote now-playing.svg");
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
