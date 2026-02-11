@@ -1,16 +1,10 @@
 name: Update SVG
 
 on:
-  schedule:
-  
   workflow_dispatch:
 
 permissions:
   contents: write
-
-concurrency:
-  group: update-svg
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -20,14 +14,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
 
       - name: Generate SVG
@@ -43,13 +36,11 @@ jobs:
 
           git add now-playing.svg
 
-          # nothing changed? stop.
-          git diff --cached --quiet && echo "No changes." && exit 0
+          # If nothing changed, stop here.
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+
+          # Sync with remote to avoid "rejected (fetch first)"
+          git pull --rebase --autostash origin main
 
           git commit -m "Update now-playing.svg"
-
-          # pull remote changes first (fixes 'fetch first')
-          git pull --rebase origin main
-
-          # now push
-          git push origin main
+          git push
