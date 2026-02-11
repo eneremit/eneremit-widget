@@ -45,6 +45,10 @@ function escapeXml(str = "") {
     .replaceAll("'", "&apos;"); // keep XML valid
 }
 
+function cleanText(s = "") {
+  return String(s).replace(/\s+/g, " ").trim();
+}
+
 async function fetchText(url) {
   const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget" } });
   if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
@@ -81,25 +85,54 @@ function approxCharsThatFit(pxWidth) {
   return Math.max(10, Math.floor(pxWidth / approxPxPerChar));
 }
 
+function ellipsizeTo(text, maxChars) {
+  const t = cleanText(text);
+  if (!t) return "—";
+  if (t.length <= maxChars) return t;
+  const cut = t.slice(0, Math.max(0, maxChars - 1)).trimEnd();
+  const lastSpace = cut.lastIndexOf(" ");
+  const safe = lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
+  return safe + "…";
+}
+
+/**
+ * Wrap rule:
+ * - If it fits in one line: keep it ONE line.
+ * - If it doesn’t fit:
+ *    1) Prefer splitting at " — " (Track/Title on line1, Artist/Author on line2)
+ *    2) Otherwise split at nearest space before limit
+ * - Never clip by cutting the last letters off; second line gets ellipsis if needed.
+ */
 function wrapToTwoLines(value, maxCharsPerLine) {
-  const text = (value || "—").trim();
+  const text = cleanText(value || "—");
   if (!text) return ["—"];
 
+  // 1) If it fits, DO NOT WRAP.
   if (text.length <= maxCharsPerLine) return [text];
 
-  // try to wrap at a space before the limit
+  // 2) Prefer splitting at " — " if present and helpful.
+  const dashIdx = text.indexOf(" — ");
+  if (dashIdx > 0) {
+    const left = cleanText(text.slice(0, dashIdx));
+    const right = cleanText(text.slice(dashIdx + 3)); // after " — "
+    // Keep left as a full first line (ellipsize only if insanely long)
+    const first = ellipsizeTo(left, maxCharsPerLine);
+    // Second line gets the right side (ellipsize if needed)
+    const second = ellipsizeTo(right, maxCharsPerLine);
+    return [first || "—", second || "—"];
+  }
+
+  // 3) Fallback: wrap at a space before the limit.
   const cut = text.lastIndexOf(" ", maxCharsPerLine);
   const first = (cut > 20 ? text.slice(0, cut) : text.slice(0, maxCharsPerLine)).trim();
 
   let rest = text.slice(first.length).trim();
-  if (!rest) return [first];
+  if (!rest) return [first || "—"];
 
-  // second line: keep as-is; if absurdly long, end with ellipsis
-  if (rest.length > maxCharsPerLine) {
-    rest = rest.slice(0, Math.max(0, maxCharsPerLine - 1)).trimEnd() + "…";
-  }
+  // Second line: if too long, ellipsize cleanly
+  rest = ellipsizeTo(rest, maxCharsPerLine);
 
-  return [first, rest];
+  return [first || "—", rest || "—"];
 }
 
 // ---------- Last.fm ----------
@@ -120,8 +153,8 @@ async function getLastfmLine() {
   const item = data?.recenttracks?.track?.[0];
   if (!item) return { text: "Last Listened To: —", link: null };
 
-  const track = (item.name || "").trim();
-  const artist = (item.artist?.["#text"] || item.artist?.name || "").trim();
+  const track = cleanText(item.name || "");
+  const artist = cleanText(item.artist?.["#text"] || item.artist?.name || "");
   const link = (item.url || "").trim() || null;
 
   const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
@@ -133,7 +166,7 @@ async function getLastfmLine() {
 
 // ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
-  const t = rawTitle.trim();
+  const t = cleanText(rawTitle);
   const clean = t.split(" - ")[0].trim();
 
   const m = clean.match(/^(.+?),\s*(\d{4})/);
@@ -168,11 +201,11 @@ async function getGoodreadsLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
-  const rawTitle = (item.title || "").trim();
+  const rawTitle = cleanText(item.title || "");
   const link = (item.link || "").trim() || null;
 
   const authorCandidates = [item.author_name, item.author, item["dc:creator"], item.creator]
-    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .map((v) => (typeof v === "string" ? cleanText(v) : ""))
     .filter(Boolean);
 
   let author = authorCandidates[0] || "";
@@ -180,8 +213,8 @@ async function getGoodreadsLatest() {
 
   if (/ by /i.test(rawTitle)) {
     const parts = rawTitle.split(/ by /i);
-    title = parts[0].trim();
-    if (!author) author = parts.slice(1).join(" by ").trim();
+    title = cleanText(parts[0] || "");
+    if (!author) author = cleanText(parts.slice(1).join(" by "));
   }
 
   if (!title) return { text: "Last Read: —", link };
