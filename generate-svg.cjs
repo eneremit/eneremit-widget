@@ -1,27 +1,22 @@
 // generate-svg.cjs
-// 3 lines, styled to match your Tumblr theme (Times New Roman, small size, brown labels)
-// RIGHT-ALIGNED so it lines up with your sidebar bio in the Bruges theme.
+// Generates now-playing.svg with 3 lines: Last Read, Last Watched, Now/Last Listened
+// Right-aligned to match Bruges theme (left sidebar text-align: right)
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
 
-// --------- REQUIRED ENV VARS ---------
-const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
-const LASTFM_USER = process.env.LASTFM_USER;
+// --------- ENV VARS ---------
+const LASTFM_API_KEY = process.env.LASTFM_API_KEY || "";
+const LASTFM_USER = process.env.LASTFM_USER || "";
 
-const GOODREADS_RSS = process.env.GOODREADS_RSS;   // e.g. https://www.goodreads.com/review/list_rss/138343303?shelf=read
-const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS; // your Letterboxd RSS link
+const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
+const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE: tuned to match your Tumblr theme ---------
+// --------- STYLE ---------
 const STYLE = {
-  // IMPORTANT: make width match the real sidebar column (Bruges sidebar is narrow)
   width: 260,
-
-  // spacing
   paddingY: 14,
   lineGap: 16,
-
-  // right-edge alignment (0 = perfectly flush; set to 2-6 if you want breathing room)
   paddingRight: 0,
 
   fontFamily: "Times New Roman, Times, serif",
@@ -29,10 +24,8 @@ const STYLE = {
 
   labelColor: "#613d12",
   valueColor: "#000000",
-
-  valueLetterSpacing: "0.3px",
   labelLetterSpacing: "0.3px",
-
+  valueLetterSpacing: "0.3px",
   opacity: 1,
 };
 
@@ -66,7 +59,7 @@ function pickFirstItem(rssParsed) {
   return item || null;
 }
 
-// --------- Last.fm ---------
+// ---------- Last.fm ----------
 async function getLastfmLine() {
   if (!LASTFM_API_KEY || !LASTFM_USER) return { text: "Last Listened To: —", link: null };
 
@@ -95,7 +88,7 @@ async function getLastfmLine() {
   return { text: `${label}: ${value || "—"}`, link };
 }
 
-// --------- Letterboxd ---------
+// ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
   const t = rawTitle.trim();
   const noRating = t.split(" - ")[0].trim();
@@ -119,10 +112,11 @@ async function getLetterboxdLatest() {
 
   const movie = parseLetterboxdTitle((item.title || "").trim());
   const link = (item.link || "").trim() || null;
+
   return { text: `Last Watched: ${movie || "—"}`, link };
 }
 
-// --------- Goodreads ---------
+// ---------- Goodreads ----------
 async function getGoodreadsLatest() {
   if (!GOODREADS_RSS) return { text: "Last Read: —", link: null };
 
@@ -154,24 +148,21 @@ async function getGoodreadsLatest() {
   if (/ by /i.test(rawTitle)) title = rawTitle.split(/ by /i)[0].trim();
 
   if (!title) return { text: "Last Read: —", link };
+
   const authorText = author ? ` — ${author}` : "";
   return { text: `Last Read: ${title}${authorText}`, link };
 }
 
-// --------- SVG render (label/value styled separately) ---------
+// ---------- SVG rendering ----------
 function splitLabelValue(lineText) {
   const idx = lineText.indexOf(":");
   if (idx === -1) return { label: lineText, value: "" };
-  return {
-    label: lineText.slice(0, idx + 1), // keep the colon
-    value: lineText.slice(idx + 1).trimStart(),
-  };
+  return { label: lineText.slice(0, idx + 1), value: lineText.slice(idx + 1).trimStart() };
 }
 
 function renderSvg(lines) {
   const { width, paddingY, lineGap, paddingRight } = STYLE;
   const height = paddingY + lineGap * lines.length + 10;
-
   const xRight = width - (paddingRight ?? 0);
 
   const rendered = lines
@@ -226,18 +217,18 @@ ${rendered}
 </svg>`;
 }
 
-// --------- main ---------
+// ---------- main ----------
 (async function main() {
   try {
-    const [goodreads, letterboxd, lastfm] = await Promise.allSettled([
+    const [grRes, lbRes, lfRes] = await Promise.allSettled([
       getGoodreadsLatest(),
       getLetterboxdLatest(),
       getLastfmLine(),
     ]);
 
-    const gr = goodreads.status === "fulfilled" ? goodreads.value : { text: "Last Read: —", link: null };
-    const lb = letterboxd.status === "fulfilled" ? letterboxd.value : { text: "Last Watched: —", link: null };
-    const lf = lastfm.status === "fulfilled" ? lastfm.value : { text: "Last Listened To: —", link: null };
+    const gr = grRes.status === "fulfilled" ? grRes.value : { text: "Last Read: —", link: null };
+    const lb = lbRes.status === "fulfilled" ? lbRes.value : { text: "Last Watched: —", link: null };
+    const lf = lfRes.status === "fulfilled" ? lfRes.value : { text: "Last Listened To: —", link: null };
 
     const svg = renderSvg([gr, lb, lf]);
     fs.writeFileSync("now-playing.svg", svg, "utf8");
@@ -246,5 +237,4 @@ ${rendered}
     console.error("Failed to generate SVG:", err);
     process.exit(1);
   }
-})();
 })();
