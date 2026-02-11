@@ -1,5 +1,6 @@
 // generate-svg.cjs
 // 3 lines, styled to match your Tumblr theme (Times New Roman, small size, brown labels)
+// RIGHT-ALIGNED so it lines up with your sidebar bio in the Bruges theme.
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -11,28 +12,25 @@ const LASTFM_USER = process.env.LASTFM_USER;
 const GOODREADS_RSS = process.env.GOODREADS_RSS;   // e.g. https://www.goodreads.com/review/list_rss/138343303?shelf=read
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS; // your Letterboxd RSS link
 
-// --------- STYLE: tuned to match your blog/player ---------
+// --------- STYLE: tuned to match your Tumblr theme ---------
 const STYLE = {
-  width: 320,
-  paddingX: 10,
-  paddingY: 20,
-  lineGap: 18,
+  // IMPORTANT: make width match the real sidebar column (Bruges sidebar is narrow)
+  width: 260,
+
+  // spacing
+  paddingY: 14,
+  lineGap: 16,
+
+  // right-edge alignment (0 = perfectly flush; set to 2-6 if you want breathing room)
+  paddingRight: 0,
 
   fontFamily: "Times New Roman, Times, serif",
-
-  // Your theme text often reads smaller in practice. 11px usually matches better in SVG.
   fontSize: 11,
 
-  // Your player label color
   labelColor: "#613d12",
-
-  // Your theme text color
   valueColor: "#000000",
 
-  // match "artist-name" feel
   valueLetterSpacing: "0.3px",
-
-  // label spacing: set to "1.3px" if you want that more stylized look
   labelLetterSpacing: "0.3px",
 
   opacity: 1,
@@ -171,8 +169,10 @@ function splitLabelValue(lineText) {
 }
 
 function renderSvg(lines) {
-  const { width, paddingX, paddingY, lineGap } = STYLE;
+  const { width, paddingY, lineGap, paddingRight } = STYLE;
   const height = paddingY + lineGap * lines.length + 10;
+
+  const xRight = width - (paddingRight ?? 0);
 
   const rendered = lines
     .map((line, i) => {
@@ -183,7 +183,7 @@ function renderSvg(lines) {
       const safeValue = escapeXml(value);
 
       const textNode = `
-  <text x="${paddingX}" y="${y}" class="line">
+  <text x="${xRight}" y="${y}" class="line" text-anchor="end">
     <tspan class="label">${safeLabel}</tspan>
     <tspan class="value">${safeValue ? " " + safeValue : " —"}</tspan>
   </text>`;
@@ -200,7 +200,10 @@ function renderSvg(lines) {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+     width="${width}" height="${height}"
+     viewBox="0 0 ${width} ${height}"
+     shape-rendering="geometricPrecision"
+     text-rendering="geometricPrecision">
   <style>
     .line {
       font-family: ${STYLE.fontFamily};
@@ -215,6 +218,7 @@ function renderSvg(lines) {
       fill: ${STYLE.valueColor};
       letter-spacing: ${STYLE.valueLetterSpacing};
     }
+    a { text-decoration: none; }
   </style>
 
   <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"/>
@@ -242,4 +246,5 @@ ${rendered}
     console.error("Failed to generate SVG:", err);
     process.exit(1);
   }
+})();
 })();
