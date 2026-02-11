@@ -1,6 +1,8 @@
 // generate-svg.cjs
-// Generates now-playing.svg
-// Left-aligned version (stable layout) — BIGGER + safer parsing
+// Generates now-playing.svg (3 lines) with:
+// - Labels (Last Read/Watched/Listened) in TEXT color
+// - Values (book/movie/song) in LINK color
+// - Left-aligned, bigger type, stable layout
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -11,19 +13,26 @@ const LASTFM_USER = process.env.LASTFM_USER || "";
 const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE (BIGGER + NO CLIPPING) ---------
+// --------- STYLE ---------
 const STYLE = {
-  width: 420,          // wider canvas
+  width: 440,
+
   paddingLeft: 12,
-  paddingTop: 26,      // more top breathing room
-  paddingBottom: 22,   // more bottom breathing room
+  paddingTop: 30,
+  paddingBottom: 26,
 
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 22,        // bigger text
-  lineGap: 34,         // bigger line spacing
+  fontSize: 26,
+  lineGap: 40,
 
-  color: "#613d12",
-  letterSpacing: "0.3px",
+  // ✅ per your theme:
+  // labels (Last Read/Watched/Listened) = #222222
+  // values (names) = #613d12
+  labelColor: "#222222",
+  valueColor: "#613d12",
+
+  labelLetterSpacing: "0.3px",
+  valueLetterSpacing: "0.3px",
 };
 
 const parser = new XMLParser({ ignoreAttributes: false });
@@ -57,19 +66,6 @@ function pickFirstItem(rssParsed) {
   return item || null;
 }
 
-function cleanAuthor(authorRaw) {
-  let a = (authorRaw || "").toString().trim();
-
-  // common “weird” outputs you mentioned
-  if (!a) return "";
-  if (a === "__" || a === "_" || a === "-" || a === "—") return "";
-
-  // remove any accidental leftover separators
-  a = a.replace(/^[-—_]+\s*/, "").replace(/\s*[-—_]+$/, "").trim();
-
-  return a;
-}
-
 // ---------- Last.fm ----------
 async function getLastfmLine() {
   if (!LASTFM_API_KEY || !LASTFM_USER) {
@@ -90,13 +86,10 @@ async function getLastfmLine() {
   const item = data?.recenttracks?.track?.[0];
   if (!item) return { text: "Last Listened To: —", link: null };
 
-  const track = item.name?.trim() || "";
-  const artist =
-    item.artist?.["#text"]?.trim() ||
-    item.artist?.name?.trim() ||
-    "";
-
+  const track = (item.name || "").trim();
+  const artist = (item.artist?.["#text"] || item.artist?.name || "").trim();
   const link = (item.url || "").trim() || null;
+
   const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
   const label = nowPlaying ? "Now Listening To" : "Last Listened To";
   const value = [track, artist].filter(Boolean).join(" — ").trim();
@@ -109,11 +102,9 @@ function parseLetterboxdTitle(rawTitle = "") {
   const t = rawTitle.trim();
   const clean = t.split(" - ")[0].trim();
 
-  // Letterboxd often gives: "Movie Title, 2025"
   const m = clean.match(/^(.+?),\s*(\d{4})(?:\b|$)/);
   if (m) return `${m[1].trim()} (${m[2].trim()})`;
 
-  // fallback: already "Movie (2025)"
   const p = clean.match(/^(.+?)\s*\((\d{4})\)\s*$/);
   if (p) return `${p[1].trim()} (${p[2].trim()})`;
 
@@ -143,64 +134,83 @@ async function getGoodreadsLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
-  let rawTitle = (item.title || "").toString().trim();
-  const link = (item.link || "").toString().trim() || null;
+  const link = (item.link || "").trim() || null;
 
-  // try known author fields
-  let author =
-    item["dc:creator"] ||
-    item.creator ||
-    item.author ||
-    item.author_name ||
-    "";
+  let rawTitle = (item.title || "").trim();
 
-  author = cleanAuthor(author);
+  const authorCandidates = [
+    item["dc:creator"],
+    item.creator,
+    item.author,
+    item.author_name,
+  ]
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter(Boolean);
 
-  // fallback: "Title by Author" inside title string
+  let author = authorCandidates[0] || "";
+
   if (!author && / by /i.test(rawTitle)) {
     const parts = rawTitle.split(/ by /i);
-    rawTitle = (parts[0] || "").trim();
-    author = cleanAuthor((parts.slice(1).join(" by ") || "").trim());
-  } else if (/ by /i.test(rawTitle)) {
-    // if author already found, still strip " by ..." from title
-    rawTitle = rawTitle.split(/ by /i)[0].trim();
+    if (parts.length >= 2) author = parts.slice(1).join(" by ").trim();
   }
 
-  const title = rawTitle || "—";
-  const authorText = author ? ` — ${author}` : "";
+  let title = rawTitle;
+  if (/ by /i.test(rawTitle)) {
+    title = rawTitle.split(/ by /i)[0].trim();
+  }
 
+  if (!title) return { text: "Last Read: —", link };
+
+  const authorText = author ? ` — ${author}` : " — —";
   return { text: `Last Read: ${title}${authorText}`, link };
 }
 
 // ---------- SVG ----------
+function splitLabelValue(lineText) {
+  const idx = lineText.indexOf(":");
+  if (idx === -1) return { label: lineText.trim(), value: "" };
+  return {
+    label: lineText.slice(0, idx + 1).trim(),
+    value: lineText.slice(idx + 1).trim(),
+  };
+}
+
 function renderSvg(lines) {
   const {
     width,
     paddingLeft,
     paddingTop,
     paddingBottom,
-    fontSize,
     lineGap,
     fontFamily,
-    color,
-    letterSpacing,
+    fontSize,
+    labelColor,
+    valueColor,
+    labelLetterSpacing,
+    valueLetterSpacing,
   } = STYLE;
 
-  // Height must account for top + bottom + (line count * gap) + extra headroom
   const height = paddingTop + paddingBottom + lineGap * lines.length + 10;
 
   const rendered = lines
     .map((line, i) => {
       const y = paddingTop + (i + 1) * lineGap;
-      const safeText = escapeXml(line.text);
+      const { label, value } = splitLabelValue(line.text);
+
+      const safeLabel = escapeXml(label || "");
+      const safeValue = escapeXml(value || "—");
 
       const textNode = `
-  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">${safeText}</text>`;
+  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">
+    <tspan class="label">${safeLabel}</tspan>
+    <tspan class="value">${safeValue ? " " + safeValue : " —"}</tspan>
+  </text>`;
 
       if (line.link) {
         const safeLink = escapeXml(line.link);
         return `
-  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${textNode}
+  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">
+    ${textNode}
   </a>`;
       }
       return textNode;
@@ -217,8 +227,14 @@ function renderSvg(lines) {
     .line {
       font-family: ${fontFamily};
       font-size: ${fontSize}px;
-      fill: ${color};
-      letter-spacing: ${letterSpacing};
+    }
+    .label {
+      fill: ${labelColor};
+      letter-spacing: ${labelLetterSpacing};
+    }
+    .value {
+      fill: ${valueColor};
+      letter-spacing: ${valueLetterSpacing};
     }
     a { text-decoration: none; }
   </style>
@@ -231,32 +247,24 @@ ${rendered}
 // ---------- main ----------
 (async function main() {
   try {
-    const results = await Promise.allSettled([
+    const [grRes, lbRes, lfRes] = await Promise.allSettled([
       getGoodreadsLatest(),
       getLetterboxdLatest(),
       getLastfmLine(),
     ]);
 
     const gr =
-      results[0].status === "fulfilled"
-        ? results[0].value
-        : { text: "Last Read: —", link: null };
-
+      grRes.status === "fulfilled" ? grRes.value : { text: "Last Read: —", link: null };
     const lb =
-      results[1].status === "fulfilled"
-        ? results[1].value
-        : { text: "Last Watched: —", link: null };
-
+      lbRes.status === "fulfilled" ? lbRes.value : { text: "Last Watched: —", link: null };
     const lf =
-      results[2].status === "fulfilled"
-        ? results[2].value
-        : { text: "Last Listened To: —", link: null };
+      lfRes.status === "fulfilled" ? lfRes.value : { text: "Last Listened To: —", link: null };
 
     const svg = renderSvg([gr, lb, lf]);
     fs.writeFileSync("now-playing.svg", svg, "utf8");
     console.log("Wrote now-playing.svg");
   } catch (err) {
-    console.error(err);
+    console.error("Failed to generate SVG:", err);
     process.exit(1);
   }
 })();
