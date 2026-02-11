@@ -5,7 +5,7 @@
 // - Last Watched: Movie (Year)
 // - Now Listening To: Track — Artist  (or Last Listened To if not currently playing)
 
-const fs = require("fs");
+import fs from "fs";
 
 const LASTFM_API_KEY = process.env.LASTFM_API_KEY || "";
 const LASTFM_USER = process.env.LASTFM_USER || "";
