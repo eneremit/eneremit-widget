@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="700" height="176"
-     viewBox="0 0 700 176"
-     overflow="visible">
+     width="760" height="176"
+     viewBox="0 0 760 176">
   <style>
     .line {
       font-family: Times New Roman, Times, serif;
