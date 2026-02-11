@@ -26,10 +26,12 @@
   </text>
   </a>
 
+  <a href="https://letterboxd.com/eneremit/film/hamnet/" target="_blank" rel="noopener noreferrer">
   <text x="10" y="38" class="line">
     <tspan class="label">Last Watched:</tspan>
-    <tspan class="value"> —</tspan>
+    <tspan class="value"> Hamnet (2025)</tspan>
   </text>
+  </a>
 
   <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
   <text x="10" y="56" class="line">
