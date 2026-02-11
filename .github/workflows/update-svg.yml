@@ -28,14 +28,12 @@ jobs:
           node-version: "20"
 
       - name: Install
-        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Generate SVG
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_USER: ${{ secrets.LASTFM_USER }}
-          LETTERBOXD_USER: ${{ secrets.LETTERBOXD_USER }}
-          GOODREADS_USER_ID: ${{ secrets.GOODREADS_USER_ID }}
         run: npm run build
 
       - name: Commit and push if changed
@@ -44,11 +42,14 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add now-playing.svg
+
+          # nothing changed? stop.
           git diff --cached --quiet && echo "No changes." && exit 0
 
           git commit -m "Update now-playing.svg"
 
-          # Make sure we're not behind if another run pushed first
+          # pull remote changes first (fixes 'fetch first')
           git pull --rebase origin main
 
+          # now push
           git push origin main
