@@ -8,9 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: update-svg
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +25,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install (nothing heavy, but keeps npm happy)
+      - name: Install
         run: npm install --no-audit --no-fund
 
       - name: Generate SVG
@@ -33,5 +38,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add now-playing.svg
-          git diff --cached --quiet || (git commit -m "Update now-playing.svg" && git push)
+
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+
+          git commit -m "Update now-playing.svg"
+
+          git pull --rebase origin main
+          git push origin main
