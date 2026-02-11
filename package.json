@@ -6,6 +6,6 @@
     "build": "node generate-svg.cjs"
   },
   "dependencies": {
-    "fast-xml-parser": "^4.5.0"
+    "fast-xml-parser": "^4.5.3"
   }
 }
