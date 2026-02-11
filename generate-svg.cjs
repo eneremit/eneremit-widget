@@ -1,6 +1,7 @@
 // generate-svg.cjs
 // Generates now-playing.svg (Read / Watched / Listened)
-// Values wrap onto a second line when long (no clipping)
+// Natural label/value spacing + wraps ONLY when needed
+// Protects author/artist chunk so it doesn't split (Anne Rice, Slayyter, etc.)
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -13,9 +14,9 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE (Tumblr sidebar tuned) ---------
 const STYLE = {
-  width: 270, // keep aligned with sidebar width
+  width: 270,            // keep aligned with sidebar width so Tumblr doesn't shrink it weirdly
   paddingLeft: 0,
-  paddingRight: 10, // ✅ extra right room so last letter never gets shaved
+  paddingRight: 0,
   paddingTop: 18,
   paddingBottom: 14,
 
@@ -26,11 +27,9 @@ const STYLE = {
   labelColor: "#222222",
   valueColor: "#613d12",
 
-  // Layout
-  labelWidthPx: 120,     // ✅ slightly smaller so values get more room (less wrapping)
-  gapPx: 6,
+  gapPx: 6,              // space between label and value on line 1
   lineGap: 24,
-  maxLinesPerSection: 2,
+  maxLinesPerSection: 2, // value may wrap to 2 lines max
 };
 
 const parser = new XMLParser({ ignoreAttributes: false });
@@ -68,34 +67,108 @@ function splitLabelValue(lineText) {
   const idx = lineText.indexOf(":");
   if (idx === -1) return { label: lineText.trim(), value: "" };
   return {
-    label: lineText.slice(0, idx + 1).trim(),
-    value: lineText.slice(idx + 1).trimStart(),
+    label: lineText.slice(0, idx + 1).trim(),     // includes colon
+    value: lineText.slice(idx + 1).trimStart(),   // value after colon
   };
 }
 
-// Approx width-per-character estimate for Times at 16px.
-function approxCharsThatFit(pxWidth) {
-  const approxPxPerChar = 8.2;
-  return Math.max(10, Math.floor(pxWidth / approxPxPerChar));
+// Times at 16px: average glyph width rough estimate.
+// We only use this for WRAP decisions, not for spacing.
+function approxPxPerChar() {
+  return 8.2;
 }
 
-function wrapToTwoLines(value, maxCharsPerLine) {
-  const text = (value || "—").trim();
-  if (!text) return ["—"];
+function approxCharsThatFit(pxWidth) {
+  return Math.max(10, Math.floor(pxWidth / approxPxPerChar()));
+}
 
-  if (text.length <= maxCharsPerLine) return [text];
+function ellipsizeToFit(text, maxChars) {
+  const t = (text || "").trim();
+  if (!t) return "—";
+  if (t.length <= maxChars) return t;
+  return t.slice(0, Math.max(0, maxChars - 1)).trimEnd() + "…";
+}
 
-  const cut = text.lastIndexOf(" ", maxCharsPerLine);
-  const first = (cut > 20 ? text.slice(0, cut) : text.slice(0, maxCharsPerLine)).trim();
+function wrapByWords(text, maxChars) {
+  const t = (text || "").trim();
+  if (!t) return ["—"];
+  if (t.length <= maxChars) return [t];
 
-  let rest = text.slice(first.length).trim();
+  // find a nice break at a space
+  const cut = t.lastIndexOf(" ", maxChars);
+  const first = (cut > 20 ? t.slice(0, cut) : t.slice(0, maxChars)).trim();
+
+  let rest = t.slice(first.length).trim();
   if (!rest) return [first];
 
-  if (rest.length > maxCharsPerLine) {
-    rest = rest.slice(0, Math.max(0, maxCharsPerLine - 1)).trimEnd() + "…";
+  return [first, rest];
+}
+
+/**
+ * Smart wrap:
+ * - Only wrap if needed
+ * - If value has " — " (author/artist), keep that chunk intact:
+ *   Prefer:
+ *     line1: main title...
+ *     line2: — Author/Artist
+ *   instead of splitting the name.
+ */
+function smartWrapValue(label, value, availablePx, gapPx, maxLines) {
+  const v = (value || "—").trim() || "—";
+
+  // Estimate how much space value has on line 1 after the label.
+  const labelPx = label.length * approxPxPerChar();
+  const valuePx = Math.max(60, availablePx - labelPx - gapPx); // never let it become microscopic
+  const maxCharsLine1 = approxCharsThatFit(valuePx);
+
+  // If it fits on line 1, do nothing.
+  if (v.length <= maxCharsLine1) return [v];
+
+  // Protect author/artist chunk if present
+  const sep = " — ";
+  if (v.includes(sep)) {
+    const parts = v.split(sep);
+    const meta = parts.pop().trim();                 // author/artist
+    const main = parts.join(sep).trim();             // title (may also include dashes)
+
+    // If the "main" fits on line1, push meta to line2 cleanly.
+    if (main && main.length <= maxCharsLine1) {
+      const line2 = "— " + meta;
+      // Line2 width is full available width (no label)
+      const maxCharsLine2 = approxCharsThatFit(availablePx);
+      const safe2 = ellipsizeToFit(line2, maxCharsLine2);
+      return [main, safe2].slice(0, maxLines);
+    }
+
+    // Otherwise: wrap main by words on line1/line2, then (if possible) append meta to line2,
+    // but never split meta. If it's too much, meta becomes its own line2.
+    const maxCharsLine2 = approxCharsThatFit(availablePx);
+    const [m1, m2raw] = wrapByWords(main || v, maxCharsLine1);
+    let m2 = (m2raw || "").trim();
+
+    if (!m2) {
+      const safe2 = ellipsizeToFit("— " + meta, maxCharsLine2);
+      return [m1, safe2].slice(0, maxLines);
+    }
+
+    // Try append meta to second line if it fits, otherwise meta alone on second line.
+    const candidate = `${m2}${sep}${meta}`.trim();
+    if (candidate.length <= maxCharsLine2) {
+      return [m1, candidate].slice(0, maxLines);
+    }
+
+    const safe2 = ellipsizeToFit("— " + meta, maxCharsLine2);
+    return [m1, safe2].slice(0, maxLines);
   }
 
-  return [first, rest];
+  // No separator: normal wrap by words
+  const maxCharsLine2 = approxCharsThatFit(availablePx);
+  const lines = wrapByWords(v, maxCharsLine1);
+  if (lines.length === 1) return lines;
+
+  // Ellipsize second line if needed
+  lines[1] = ellipsizeToFit(lines[1], maxCharsLine2);
+  return lines.slice(0, maxLines);
 }
 
 // ---------- Last.fm ----------
@@ -199,44 +272,41 @@ function renderSvg(lines) {
     letterSpacing,
     labelColor,
     valueColor,
-    labelWidthPx,
     gapPx,
     lineGap,
     maxLinesPerSection,
   } = STYLE;
 
-  const valueX = paddingLeft + labelWidthPx + gapPx;
-  const valueWidth = Math.max(40, width - paddingRight - valueX);
-  const maxChars = approxCharsThatFit(valueWidth);
+  const availablePx = Math.max(40, width - paddingLeft - paddingRight);
 
+  // Pre-calc wrapped blocks so we can compute height
   const blocks = lines.map((line) => {
     const { label, value } = splitLabelValue(line.text);
-    const wrapped = wrapToTwoLines(value || "—", maxChars).slice(0, maxLinesPerSection);
-    return { label: label || "", wrapped, link: line.link || null };
+    const wrapped = smartWrapValue(label, value, availablePx, gapPx, maxLinesPerSection);
+    return { label, wrapped, link: line.link || null };
   });
 
-  const totalRenderedLines = blocks.reduce((sum, b) => sum + Math.max(1, b.wrapped.length), 0);
-  const height = paddingTop + paddingBottom + totalRenderedLines * lineGap;
+  const totalLines = blocks.reduce((sum, b) => sum + Math.max(1, b.wrapped.length), 0);
+  const height = paddingTop + paddingBottom + totalLines * lineGap;
 
-  let cursorLine = 0;
+  let cursor = 0;
 
   const rendered = blocks
     .map((b) => {
+      const y1 = paddingTop + (cursor + 1) * lineGap;
       const labelSafe = escapeXml(b.label);
+      const v1 = escapeXml(b.wrapped[0] || "—");
+      const v2 = b.wrapped[1] ? escapeXml(b.wrapped[1]) : "";
 
-      const firstY = paddingTop + (cursorLine + 1) * lineGap;
-      const firstValue = escapeXml(b.wrapped[0] || "—");
-      const secondLine = b.wrapped[1] ? escapeXml(b.wrapped[1]) : "";
+      cursor += Math.max(1, b.wrapped.length);
 
-      cursorLine += Math.max(1, b.wrapped.length);
-
+      // Line 1: label + value starts immediately after label (dx)
+      // Line 2: value-only, aligned to left padding (no weird gaps)
       const textNode = `
-  <text x="${paddingLeft}" y="${firstY}" class="line" text-anchor="start">
+  <text x="${paddingLeft}" y="${y1}" class="line" text-anchor="start">
     <tspan class="label">${labelSafe}</tspan>
-    <tspan class="value" x="${valueX}">${firstValue}</tspan>${
-      secondLine
-        ? `\n    <tspan class="value" x="${valueX}" dy="${lineGap}">${secondLine}</tspan>`
-        : ""
+    <tspan class="value" dx="${gapPx}">${v1}</tspan>${
+      v2 ? `\n    <tspan class="value" x="${paddingLeft}" dy="${lineGap}">${v2}</tspan>` : ""
     }
   </text>`;
 
@@ -254,8 +324,7 @@ function renderSvg(lines) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      width="${width}" height="${height}"
-     viewBox="0 0 ${width} ${height}"
-     overflow="visible">
+     viewBox="0 0 ${width} ${height}">
   <style>
     .line {
       font-family: ${fontFamily};
