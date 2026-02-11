@@ -15,10 +15,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -26,12 +28,14 @@ jobs:
           node-version: "20"
 
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
       - name: Generate SVG
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_USER: ${{ secrets.LASTFM_USER }}
+          LETTERBOXD_USER: ${{ secrets.LETTERBOXD_USER }}
+          GOODREADS_USER_ID: ${{ secrets.GOODREADS_USER_ID }}
         run: npm run build
 
       - name: Commit and push if changed
@@ -40,13 +44,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add now-playing.svg
-
-          if git diff --cached --quiet; then
-            echo "No changes."
-            exit 0
-          fi
+          git diff --cached --quiet && echo "No changes." && exit 0
 
           git commit -m "Update now-playing.svg"
 
+          # Make sure we're not behind if another run pushed first
           git pull --rebase origin main
+
           git push origin main
