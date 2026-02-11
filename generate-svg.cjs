@@ -1,7 +1,6 @@
 // generate-svg.cjs
-// Generates now-playing.svg (3 lines) sized for Tumblr sidebar (no shrink)
-
-"use strict";
+// Generates now-playing.svg (3 lines) sized for Tumblr sidebar.
+// Labels stay normal; Values auto-fit (no clipping) using textLength.
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -12,23 +11,25 @@ const LASTFM_USER = process.env.LASTFM_USER || "";
 const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE tuned for Tumblr sidebar ---------
+// --------- STYLE (Tumblr sidebar tuned) ---------
 const STYLE = {
-  width: 270, // match sidebar width so it doesn't get scaled down
+  width: 270,              // match sidebar so Tumblr doesn't scale it weirdly
   paddingLeft: 0,
+  paddingRight: 0,
   paddingTop: 18,
   paddingBottom: 14,
 
   fontFamily: "Times New Roman, Times, serif",
   fontSize: 16,
   lineGap: 24,
+  letterSpacing: "0.3px",
 
   labelColor: "#222222",
   valueColor: "#613d12",
-  letterSpacing: "0.3px",
 
-  // Clamp the VALUE (book/movie/song) so it doesn't visually clip in 270px.
-  maxValueChars: 42,
+  // Reserve a fixed label width so value always has predictable space.
+  // This prevents clipping even when we "fit" the value.
+  labelWidthPx: 128,       // tweakable, but this works well for "Last Listened To:"
 };
 
 const parser = new XMLParser({ ignoreAttributes: false });
@@ -41,13 +42,6 @@ function escapeXml(str = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
-}
-
-function clampValue(s, maxChars) {
-  const t = (s || "").trim();
-  if (!t) return "—";
-  if (t.length <= maxChars) return t;
-  return t.slice(0, Math.max(0, maxChars - 1)).trimEnd() + "…";
 }
 
 async function fetchText(url) {
@@ -71,9 +65,9 @@ function pickFirstItem(rssParsed) {
 
 function splitLabelValue(lineText) {
   const idx = lineText.indexOf(":");
-  if (idx === -1) return { label: lineText, value: "" };
+  if (idx === -1) return { label: lineText.trim(), value: "" };
   return {
-    label: lineText.slice(0, idx + 1),
+    label: lineText.slice(0, idx + 1).trim(),
     value: lineText.slice(idx + 1).trimStart(),
   };
 }
@@ -171,56 +165,73 @@ function renderSvg(lines) {
   const {
     width,
     paddingLeft,
+    paddingRight,
     paddingTop,
     paddingBottom,
     fontSize,
     lineGap,
     fontFamily,
+    letterSpacing,
     labelColor,
     valueColor,
-    letterSpacing,
-    maxValueChars,
+    labelWidthPx,
   } = STYLE;
 
   const height = paddingTop + paddingBottom + lineGap * lines.length;
+
+  // value gets whatever room remains after labelWidthPx (+ a small gap)
+  const gapPx = 6;
+  const valueX = paddingLeft + labelWidthPx + gapPx;
+  const valueWidth = Math.max(40, width - paddingRight - valueX); // never go negative
 
   const rendered = lines
     .map((line, i) => {
       const y = paddingTop + (i + 1) * lineGap;
 
       const { label, value } = splitLabelValue(line.text);
-      const safeLabel = escapeXml(label);
-      const safeValue = escapeXml(clampValue(value, maxValueChars));
+      const safeLabel = escapeXml(label || "");
+      const safeValue = escapeXml(value || "—");
 
-      const textNode =
-        `\n  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">` +
-        `\n    <tspan class="label">${safeLabel}</tspan>` +
-        `\n    <tspan class="value"> ${safeValue}</tspan>` +
-        `\n  </text>`;
+      const textNode = `
+  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">
+    <tspan class="label">${safeLabel}</tspan>
+    <tspan
+      class="value"
+      x="${valueX}"
+      textLength="${valueWidth}"
+      lengthAdjust="spacingAndGlyphs"
+    >${safeValue}</tspan>
+  </text>`;
 
       if (line.link) {
         const safeLink = escapeXml(line.link);
-        return `\n  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${textNode}\n  </a>`;
+        return `
+  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">
+    ${textNode}
+  </a>`;
       }
       return textNode;
     })
     .join("\n");
 
-  return (
-    `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<svg xmlns="http://www.w3.org/2000/svg"\n` +
-    `     width="${width}" height="${height}"\n` +
-    `     viewBox="0 0 ${width} ${height}">\n` +
-    `  <style>\n` +
-    `    .line { font-family: ${fontFamily}; font-size: ${fontSize}px; letter-spacing: ${letterSpacing}; }\n` +
-    `    .label { fill: ${labelColor}; }\n` +
-    `    .value { fill: ${valueColor}; }\n` +
-    `    a { text-decoration: none; }\n` +
-    `  </style>\n\n` +
-    `  <rect width="100%" height="100%" fill="transparent"/>\n` +
-    `${rendered}\n` +
-    `</svg>\n`
-  );
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="${width}" height="${height}"
+     viewBox="0 0 ${width} ${height}">
+  <style>
+    .line {
+      font-family: ${fontFamily};
+      font-size: ${fontSize}px;
+      letter-spacing: ${letterSpacing};
+    }
+    .label { fill: ${labelColor}; }
+    .value { fill: ${valueColor}; }
+    a { text-decoration: none; }
+  </style>
+
+  <rect width="100%" height="100%" fill="transparent"/>
+${rendered}
+</svg>`;
 }
 
 // ---------- main ----------
