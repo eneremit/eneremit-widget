@@ -1,42 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
-     width="320" height="84" viewBox="0 0 320 84">
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="120" viewBox="0 0 520 120">
+  <rect x="0" y="0" width="520" height="120" fill="transparent" />
+
   <style>
-    .line {
-      font-family: Times New Roman, Times, serif;
-      font-size: 11px;
-      opacity: 1;
-    }
-    .label {
-      fill: #613d12;
-      letter-spacing: 0.3px;
-    }
-    .value {
-      fill: #000000;
-      letter-spacing: 0.3px;
-    }
+    .t { font-family: Times New Roman, Times, serif; font-size: 15px; dominant-baseline: alphabetic; }
+    .label { fill: #2c2c2c; opacity: 0.55; }
+    .value { fill: #2c2c2c; opacity: 0.95; }
+    a:hover .value { opacity: 1; text-decoration: underline; }
   </style>
 
-  <rect x="0" y="0" width="320" height="84" fill="transparent"/>
-
-  <a href="https://www.goodreads.com/review/show/5846417559?utm_medium=api&amp;utm_source=rss" target="_blank" rel="noopener noreferrer">
-  <text x="10" y="20" class="line">
-    <tspan class="label">Last Read:</tspan>
-    <tspan class="value"> Fear Itself — Stan Rice</tspan>
-  </text>
+  <a href="https://www.goodreads.com/" target="_blank" rel="noopener noreferrer">
+    <text class="t" x="18" y="35">
+      <tspan class="label">Last Read: </tspan>
+      <tspan class="value">—</tspan>
+    </text>
   </a>
 
-  <a href="https://letterboxd.com/eneremit/film/hamnet/" target="_blank" rel="noopener noreferrer">
-  <text x="10" y="38" class="line">
-    <tspan class="label">Last Watched:</tspan>
-    <tspan class="value"> Hamnet (2025)</tspan>
-  </text>
+  <a href="https://letterboxd.com/" target="_blank" rel="noopener noreferrer">
+    <text class="t" x="18" y="57">
+      <tspan class="label">Last Watched: </tspan>
+      <tspan class="value">—</tspan>
+    </text>
   </a>
 
   <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
-  <text x="10" y="56" class="line">
-    <tspan class="label">Last Listened To:</tspan>
-    <tspan class="value"> DANCE... — Slayyyter</tspan>
-  </text>
+    <text class="t" x="18" y="79">
+      <tspan class="label">Last Listened To: </tspan>
+      <tspan class="value">DANCE... — Slayyyter</tspan>
+    </text>
   </a>
 </svg>
