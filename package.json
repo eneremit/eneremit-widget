@@ -2,11 +2,7 @@
   "name": "eneremit-widget",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "build": "node generate-svg.js"
-  },
-  "dependencies": {
-    "fast-xml-parser": "^4.5.0"
+    "build": "node generate-svg.cjs"
   }
 }
