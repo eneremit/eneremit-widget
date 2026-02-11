@@ -2,7 +2,7 @@ name: Update SVG
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,13 +26,15 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install deps
+      - name: Install
         run: npm install --no-audit --no-fund
 
       - name: Generate SVG
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_USER: ${{ secrets.LASTFM_USER }}
+          GOODREADS_RSS: ${{ secrets.GOODREADS_RSS }}
+          LETTERBOXD_RSS: ${{ secrets.LETTERBOXD_RSS }}
         run: npm run build
 
       - name: Commit and push if changed
@@ -45,7 +47,5 @@ jobs:
 
           git commit -m "Update now-playing.svg"
 
-          # bring in anything that landed while we were running
           git pull --rebase origin main
-
           git push
