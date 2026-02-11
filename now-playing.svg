@@ -1,44 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="360" height="76"
-     viewBox="0 0 360 76"
+     width="360" height="73"
+     viewBox="0 0 360 73"
      shape-rendering="geometricPrecision"
      text-rendering="geometricPrecision">
   <style>
     .line {
       font-family: Times New Roman, Times, serif;
-      font-size: 16px;
+      font-size: 13px;
+      font-weight: 400;
       opacity: 1;
     }
     .label {
-      fill: undefined;
-      letter-spacing: undefined;
+      fill: #613d12;
+      letter-spacing: 0.3px;
     }
     .value {
-      fill: undefined;
-      letter-spacing: undefined;
+      fill: #613d12;
+      letter-spacing: 0.3px;
     }
     a { text-decoration: none; }
   </style>
 
-  <rect x="0" y="0" width="360" height="76" fill="transparent"/>
+  <rect x="0" y="0" width="360" height="73" fill="transparent"/>
 
   <a href="https://www.goodreads.com/review/show/5846417559?utm_medium=api&amp;utm_source=rss" target="_blank" rel="noopener noreferrer">
-  <text x="360" y="0" class="line" text-anchor="end">
+  <text x="354" y="23" class="line" text-anchor="end">
     <tspan class="label">Last Read:</tspan>
     <tspan class="value"> Fear Itself — Stan Rice</tspan>
   </text>
   </a>
 
   <a href="https://letterboxd.com/eneremit/film/hamnet/" target="_blank" rel="noopener noreferrer">
-  <text x="360" y="22" class="line" text-anchor="end">
+  <text x="354" y="43" class="line" text-anchor="end">
     <tspan class="label">Last Watched:</tspan>
     <tspan class="value"> Hamnet (2025)</tspan>
   </text>
   </a>
 
   <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
-  <text x="360" y="44" class="line" text-anchor="end">
+  <text x="354" y="63" class="line" text-anchor="end">
     <tspan class="label">Last Listened To:</tspan>
     <tspan class="value"> DANCE... — Slayyyter</tspan>
   </text>
