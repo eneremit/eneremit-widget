@@ -1,6 +1,6 @@
 // generate-svg.cjs
-// Generates now-playing.svg with 3 lines: Last Read, Last Watched, Now/Last Listened
-// Right-aligned to match Bruges theme sidebar
+// Generates now-playing.svg
+// Left-aligned version (stable layout)
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -11,38 +11,23 @@ const LASTFM_USER = process.env.LASTFM_USER || "";
 const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE (EDIT HERE) ---------
-// If you want bigger letters WITHOUT breaking the frame, change fontSize + lineGap together.
+// --------- STYLE ---------
 const STYLE = {
   width: 360,
 
-  // Padding inside the SVG
-  paddingTop: 10,
-  paddingRight: 6,
-  paddingBottom: 10,
+  paddingLeft: 12,
+  paddingTop: 18,
+  paddingBottom: 14,
 
-  // Typography
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 13,        // try 13–15
-  lineGap: 20,         // should be fontSize + ~7
+  fontSize: 14,
+  lineGap: 20,
 
-  // Colors (match your theme vibe)
-  labelColor: "#613d12",
-  valueColor: "#613d12",
-  opacity: 1,
-
-  // Letter spacing (subtle, clean)
-  labelLetterSpacing: "0.3px",
-  valueLetterSpacing: "0.3px",
+  color: "#613d12",
+  letterSpacing: "0.3px",
 };
 
-// Safer XML parsing
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  trimValues: true,
-  parseTagValue: true,
-  parseAttributeValue: false,
-});
+const parser = new XMLParser({ ignoreAttributes: false });
 
 // ---------- helpers ----------
 function escapeXml(str = "") {
@@ -73,27 +58,10 @@ function pickFirstItem(rssParsed) {
   return item || null;
 }
 
-function asString(v) {
-  if (v == null) return "";
-  if (typeof v === "string") return v.trim();
-  // fast-xml-parser can sometimes give objects like { "#text": "..." }
-  if (typeof v === "object" && typeof v["#text"] === "string") return v["#text"].trim();
-  return String(v).trim();
-}
-
-function cleanAuthor(authorRaw) {
-  let a = asString(authorRaw);
-  // Goodreads sometimes includes extra labels or weird spacing
-  a = a.replace(/\s+/g, " ").trim();
-  a = a.replace(/\(Goodreads Author\)/gi, "").trim();
-  // Prevent "—" or "__" style placeholders
-  if (!a || a === "_" || a === "__") return "";
-  return a;
-}
-
 // ---------- Last.fm ----------
 async function getLastfmLine() {
-  if (!LASTFM_API_KEY || !LASTFM_USER) return { text: "Last Listened To: —", link: null };
+  if (!LASTFM_API_KEY || !LASTFM_USER)
+    return { text: "Last Listened To: —", link: null };
 
   const url =
     "https://ws.audioscrobbler.com/2.0/?" +
@@ -103,136 +71,116 @@ async function getLastfmLine() {
       api_key: LASTFM_API_KEY,
       format: "json",
       limit: "1",
-    }).toString();
+    });
 
   const data = await fetchJson(url);
   const item = data?.recenttracks?.track?.[0];
   if (!item) return { text: "Last Listened To: —", link: null };
 
-  const track = asString(item.name);
-  const artist = asString(item.artist?.["#text"] || item.artist?.name);
-  const link = asString(item.url) || null;
+  const track = item.name?.trim() || "";
+  const artist =
+    item.artist?.["#text"]?.trim() ||
+    item.artist?.name?.trim() ||
+    "";
 
+  const link = item.url || null;
   const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
   const label = nowPlaying ? "Now Listening To" : "Last Listened To";
-  const value = [track, artist].filter(Boolean).join(" — ").trim();
+  const value = [track, artist].filter(Boolean).join(" — ");
 
   return { text: `${label}: ${value || "—"}`, link };
 }
 
 // ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
-  const t = asString(rawTitle);
-  if (!t) return "—";
+  const t = rawTitle.trim();
+  const clean = t.split(" - ")[0].trim();
 
-  // Many Letterboxd RSS titles look like: "★★★★★ Film Title, 2025 - ...".
-  const noRating = t.split(" - ")[0].trim();
-
-  // Convert "Title, 2025" -> "Title (2025)"
-  const m = noRating.match(/^(.+?),\s*(\d{4})(?:\b|$)/);
+  const m = clean.match(/^(.+?),\s*(\d{4})/);
   if (m) return `${m[1].trim()} (${m[2].trim()})`;
 
-  // Or already "Title (2025)"
-  const p = noRating.match(/^(.+?)\s*\((\d{4})\)\s*$/);
-  if (p) return `${p[1].trim()} (${p[2].trim()})`;
-
-  return noRating || "—";
+  return clean || "—";
 }
 
 async function getLetterboxdLatest() {
-  if (!LETTERBOXD_RSS) return { text: "Last Watched: —", link: null };
+  if (!LETTERBOXD_RSS)
+    return { text: "Last Watched: —", link: null };
 
   const xml = await fetchText(LETTERBOXD_RSS);
   const parsed = parser.parse(xml);
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Watched: —", link: null };
 
-  const movie = parseLetterboxdTitle(item.title);
-  const link = asString(item.link) || null;
+  const movie = parseLetterboxdTitle(item.title || "");
+  const link = item.link || null;
 
-  return { text: `Last Watched: ${movie || "—"}`, link };
+  return { text: `Last Watched: ${movie}`, link };
 }
 
 // ---------- Goodreads ----------
 async function getGoodreadsLatest() {
-  if (!GOODREADS_RSS) return { text: "Last Read: —", link: null };
+  if (!GOODREADS_RSS)
+    return { text: "Last Read: —", link: null };
 
   const xml = await fetchText(GOODREADS_RSS);
   const parsed = parser.parse(xml);
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
-  const rawTitle = asString(item.title);
-  const link = asString(item.link) || null;
+  let rawTitle = item.title?.trim() || "";
+  const link = item.link || null;
 
-  // Goodreads RSS usually includes <author_name>, sometimes <dc:creator>
-  const authorCandidates = [
-    item.author_name,
-    item.author,
-    item["dc:creator"],
-    item.creator,
-  ]
-    .map(cleanAuthor)
-    .filter(Boolean);
+  let author =
+    item["dc:creator"] ||
+    item.creator ||
+    item.author ||
+    item.author_name ||
+    "";
 
-  let author = authorCandidates[0] || "";
-
-  // Fallback: "Title by Author" in the RSS title
-  let title = rawTitle;
-  if (/ by /i.test(rawTitle)) {
+  if (!author && / by /i.test(rawTitle)) {
     const parts = rawTitle.split(/ by /i);
-    title = parts[0].trim();
-    if (!author) author = cleanAuthor(parts.slice(1).join(" by ").trim());
+    rawTitle = parts[0].trim();
+    author = parts[1]?.trim() || "";
   }
 
-  if (!title) return { text: "Last Read: —", link };
-
   const authorText = author ? ` — ${author}` : "";
-  return { text: `Last Read: ${title}${authorText}`, link };
+  return { text: `Last Read: ${rawTitle}${authorText}`, link };
 }
 
-// ---------- SVG rendering ----------
-function splitLabelValue(lineText) {
-  const idx = lineText.indexOf(":");
-  if (idx === -1) return { label: lineText, value: "" };
-  return { label: lineText.slice(0, idx + 1), value: lineText.slice(idx + 1).trimStart() };
-}
-
+// ---------- SVG ----------
 function renderSvg(lines) {
   const {
     width,
+    paddingLeft,
     paddingTop,
-    paddingRight,
     paddingBottom,
     fontSize,
     lineGap,
+    fontFamily,
+    color,
+    letterSpacing,
   } = STYLE;
 
-  // Baseline-safe layout:
-  // first line baseline at paddingTop + fontSize
-  const contentHeight = fontSize + (lines.length - 1) * lineGap;
-  const height = paddingTop + contentHeight + paddingBottom;
-
-  const xRight = width - paddingRight;
+  const height =
+    paddingTop +
+    paddingBottom +
+    lineGap * lines.length;
 
   const rendered = lines
     .map((line, i) => {
-      const y = paddingTop + fontSize + i * lineGap; // baseline-safe
-      const { label, value } = splitLabelValue(line.text);
-
-      const safeLabel = escapeXml(label);
-      const safeValue = escapeXml(value);
+      const y = paddingTop + (i + 1) * lineGap;
+      const safeText = escapeXml(line.text);
 
       const textNode = `
-  <text x="${xRight}" y="${y}" class="line" text-anchor="end">
-    <tspan class="label">${safeLabel}</tspan>
-    <tspan class="value">${safeValue ? " " + safeValue : " —"}</tspan>
+  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">
+    ${safeText}
   </text>`;
 
       if (line.link) {
         const safeLink = escapeXml(line.link);
         return `
-  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${textNode}
+  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">
+    ${textNode}
   </a>`;
       }
       return textNode;
@@ -242,28 +190,18 @@ function renderSvg(lines) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      width="${width}" height="${height}"
-     viewBox="0 0 ${width} ${height}"
-     shape-rendering="geometricPrecision"
-     text-rendering="geometricPrecision">
+     viewBox="0 0 ${width} ${height}">
   <style>
     .line {
-      font-family: ${STYLE.fontFamily};
-      font-size: ${STYLE.fontSize}px;
-      font-weight: ${STYLE.fontWeight || 400};
-      opacity: ${STYLE.opacity};
-    }
-    .label {
-      fill: ${STYLE.labelColor};
-      letter-spacing: ${STYLE.labelLetterSpacing};
-    }
-    .value {
-      fill: ${STYLE.valueColor};
-      letter-spacing: ${STYLE.valueLetterSpacing};
+      font-family: ${fontFamily};
+      font-size: ${fontSize}px;
+      fill: ${color};
+      letter-spacing: ${letterSpacing};
     }
     a { text-decoration: none; }
   </style>
 
-  <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"/>
+  <rect width="100%" height="100%" fill="transparent"/>
 ${rendered}
 </svg>`;
 }
@@ -271,21 +209,17 @@ ${rendered}
 // ---------- main ----------
 (async function main() {
   try {
-    const [grRes, lbRes, lfRes] = await Promise.allSettled([
+    const [gr, lb, lf] = await Promise.all([
       getGoodreadsLatest(),
       getLetterboxdLatest(),
       getLastfmLine(),
     ]);
 
-    const gr = grRes.status === "fulfilled" ? grRes.value : { text: "Last Read: —", link: null };
-    const lb = lbRes.status === "fulfilled" ? lbRes.value : { text: "Last Watched: —", link: null };
-    const lf = lfRes.status === "fulfilled" ? lfRes.value : { text: "Last Listened To: —", link: null };
-
     const svg = renderSvg([gr, lb, lf]);
     fs.writeFileSync("now-playing.svg", svg, "utf8");
     console.log("Wrote now-playing.svg");
   } catch (err) {
-    console.error("Failed to generate SVG:", err);
+    console.error(err);
     process.exit(1);
   }
 })();
