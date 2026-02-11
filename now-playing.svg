@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="270" height="104"
-     viewBox="0 0 270 104">
+     width="270" height="152"
+     viewBox="0 0 270 152">
   <style>
     .line {
       font-family: Times New Roman, Times, serif;
@@ -19,38 +19,28 @@
     
   <text x="0" y="42" class="line" text-anchor="start">
     <tspan class="label">Last Read:</tspan>
-    <tspan
-      class="value"
-      x="134"
-      textLength="136"
-      lengthAdjust="spacingAndGlyphs"
-    >Fear Itself — Stan Rice</tspan>
+    <tspan class="value" x="134">Fear Itself — St</tspan>
+    
+    <tspan class="value" x="134" dy="24">an Rice</tspan>
   </text>
   </a>
 
   <a href="https://letterboxd.com/eneremit/film/hamnet/" target="_blank" rel="noopener noreferrer">
     
-  <text x="0" y="66" class="line" text-anchor="start">
+  <text x="0" y="90" class="line" text-anchor="start">
     <tspan class="label">Last Watched:</tspan>
-    <tspan
-      class="value"
-      x="134"
-      textLength="136"
-      lengthAdjust="spacingAndGlyphs"
-    >Hamnet (2025)</tspan>
+    <tspan class="value" x="134">Hamnet (2025)</tspan>
+    
   </text>
   </a>
 
   <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
     
-  <text x="0" y="90" class="line" text-anchor="start">
+  <text x="0" y="114" class="line" text-anchor="start">
     <tspan class="label">Last Listened To:</tspan>
-    <tspan
-      class="value"
-      x="134"
-      textLength="136"
-      lengthAdjust="spacingAndGlyphs"
-    >DANCE... — Slayyyter</tspan>
+    <tspan class="value" x="134">DANCE... — Slayy</tspan>
+    
+    <tspan class="value" x="134" dy="24">yter</tspan>
   </text>
   </a>
 </svg>
