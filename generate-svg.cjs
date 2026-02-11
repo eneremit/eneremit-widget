@@ -1,6 +1,6 @@
 // generate-svg.cjs
 // Generates now-playing.svg with 3 lines: Last Read, Last Watched, Now/Last Listened
-// Right-aligned to match Bruges theme (left sidebar text-align: right)
+// Right-aligned to match Bruges theme sidebar
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -8,26 +8,43 @@ const { XMLParser } = require("fast-xml-parser");
 // --------- ENV VARS ---------
 const LASTFM_API_KEY = process.env.LASTFM_API_KEY || "";
 const LASTFM_USER = process.env.LASTFM_USER || "";
-
 const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE (LEGIBILITY BOOST) ---------
-// Bigger but still “bio-sized” for your sidebar.
+// --------- STYLE (EDIT HERE) ---------
+// If you want bigger letters WITHOUT breaking the frame, change fontSize + lineGap together.
 const STYLE = {
   width: 360,
-  paddingX: 0,
-  paddingY: 0,
-  lineGap: 22,      // slightly more breathing room
+
+  // Padding inside the SVG
+  paddingTop: 10,
+  paddingRight: 6,
+  paddingBottom: 10,
+
+  // Typography
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 16,     // ← bump this up
-  fontWeight: 400,
-  fill: "#613d12",
+  fontSize: 13,        // try 13–15
+  lineGap: 20,         // should be fontSize + ~7
+
+  // Colors (match your theme vibe)
+  labelColor: "#613d12",
+  valueColor: "#613d12",
   opacity: 1,
+
+  // Letter spacing (subtle, clean)
+  labelLetterSpacing: "0.3px",
+  valueLetterSpacing: "0.3px",
 };
 
-const parser = new XMLParser({ ignoreAttributes: false });
+// Safer XML parsing
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  trimValues: true,
+  parseTagValue: true,
+  parseAttributeValue: false,
+});
 
+// ---------- helpers ----------
 function escapeXml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -56,6 +73,24 @@ function pickFirstItem(rssParsed) {
   return item || null;
 }
 
+function asString(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  // fast-xml-parser can sometimes give objects like { "#text": "..." }
+  if (typeof v === "object" && typeof v["#text"] === "string") return v["#text"].trim();
+  return String(v).trim();
+}
+
+function cleanAuthor(authorRaw) {
+  let a = asString(authorRaw);
+  // Goodreads sometimes includes extra labels or weird spacing
+  a = a.replace(/\s+/g, " ").trim();
+  a = a.replace(/\(Goodreads Author\)/gi, "").trim();
+  // Prevent "—" or "__" style placeholders
+  if (!a || a === "_" || a === "__") return "";
+  return a;
+}
+
 // ---------- Last.fm ----------
 async function getLastfmLine() {
   if (!LASTFM_API_KEY || !LASTFM_USER) return { text: "Last Listened To: —", link: null };
@@ -74,9 +109,9 @@ async function getLastfmLine() {
   const item = data?.recenttracks?.track?.[0];
   if (!item) return { text: "Last Listened To: —", link: null };
 
-  const track = (item.name || "").trim();
-  const artist = (item.artist?.["#text"] || item.artist?.name || "").trim();
-  const link = (item.url || "").trim() || null;
+  const track = asString(item.name);
+  const artist = asString(item.artist?.["#text"] || item.artist?.name);
+  const link = asString(item.url) || null;
 
   const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
   const label = nowPlaying ? "Now Listening To" : "Last Listened To";
@@ -87,12 +122,17 @@ async function getLastfmLine() {
 
 // ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
-  const t = rawTitle.trim();
+  const t = asString(rawTitle);
+  if (!t) return "—";
+
+  // Many Letterboxd RSS titles look like: "★★★★★ Film Title, 2025 - ...".
   const noRating = t.split(" - ")[0].trim();
 
+  // Convert "Title, 2025" -> "Title (2025)"
   const m = noRating.match(/^(.+?),\s*(\d{4})(?:\b|$)/);
   if (m) return `${m[1].trim()} (${m[2].trim()})`;
 
+  // Or already "Title (2025)"
   const p = noRating.match(/^(.+?)\s*\((\d{4})\)\s*$/);
   if (p) return `${p[1].trim()} (${p[2].trim()})`;
 
@@ -107,8 +147,8 @@ async function getLetterboxdLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Watched: —", link: null };
 
-  const movie = parseLetterboxdTitle((item.title || "").trim());
-  const link = (item.link || "").trim() || null;
+  const movie = parseLetterboxdTitle(item.title);
+  const link = asString(item.link) || null;
 
   return { text: `Last Watched: ${movie || "—"}`, link };
 }
@@ -122,22 +162,28 @@ async function getGoodreadsLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
-  const rawTitle = (item.title || "").trim();
-  const link = (item.link || "").trim() || null;
+  const rawTitle = asString(item.title);
+  const link = asString(item.link) || null;
 
-  const authorCandidates = [item.author_name, item.author, item["dc:creator"], item.creator]
-    .map((v) => (typeof v === "string" ? v.trim() : ""))
+  // Goodreads RSS usually includes <author_name>, sometimes <dc:creator>
+  const authorCandidates = [
+    item.author_name,
+    item.author,
+    item["dc:creator"],
+    item.creator,
+  ]
+    .map(cleanAuthor)
     .filter(Boolean);
 
   let author = authorCandidates[0] || "";
 
-  if (!author && / by /i.test(rawTitle)) {
-    const parts = rawTitle.split(/ by /i);
-    if (parts.length >= 2) author = parts.slice(1).join(" by ").trim();
-  }
-
+  // Fallback: "Title by Author" in the RSS title
   let title = rawTitle;
-  if (/ by /i.test(rawTitle)) title = rawTitle.split(/ by /i)[0].trim();
+  if (/ by /i.test(rawTitle)) {
+    const parts = rawTitle.split(/ by /i);
+    title = parts[0].trim();
+    if (!author) author = cleanAuthor(parts.slice(1).join(" by ").trim());
+  }
 
   if (!title) return { text: "Last Read: —", link };
 
@@ -153,13 +199,25 @@ function splitLabelValue(lineText) {
 }
 
 function renderSvg(lines) {
-  const { width, paddingY, lineGap, paddingRight } = STYLE;
-  const height = paddingY + lineGap * lines.length + 10;
-  const xRight = width - (paddingRight ?? 0);
+  const {
+    width,
+    paddingTop,
+    paddingRight,
+    paddingBottom,
+    fontSize,
+    lineGap,
+  } = STYLE;
+
+  // Baseline-safe layout:
+  // first line baseline at paddingTop + fontSize
+  const contentHeight = fontSize + (lines.length - 1) * lineGap;
+  const height = paddingTop + contentHeight + paddingBottom;
+
+  const xRight = width - paddingRight;
 
   const rendered = lines
     .map((line, i) => {
-      const y = paddingY + i * lineGap;
+      const y = paddingTop + fontSize + i * lineGap; // baseline-safe
       const { label, value } = splitLabelValue(line.text);
 
       const safeLabel = escapeXml(label);
@@ -191,6 +249,7 @@ function renderSvg(lines) {
     .line {
       font-family: ${STYLE.fontFamily};
       font-size: ${STYLE.fontSize}px;
+      font-weight: ${STYLE.fontWeight || 400};
       opacity: ${STYLE.opacity};
     }
     .label {
