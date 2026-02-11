@@ -1,20 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="460" height="78" viewBox="0 0 460 78">
-  <rect width="100%" height="100%" fill="transparent" />
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="70" viewBox="0 0 360 70" role="img" aria-label="Now Playing Widget">
   <style>
-    .t { font-family: Times New Roman, Times, serif; font-size: 13px; fill: #613d12; letter-spacing: 0.3px; }
-    .label { opacity: 0.85; }
-    .val { opacity: 1; }
+    .t {
+      font-family: Times New Roman, Times, serif;
+      font-size: 13px;
+      fill: #613d12;
+      fill-opacity: 1;
+      letter-spacing: 0.2px;
+    }
   </style>
 
-  
-  <text class="t" x="12" y="25">
-    <tspan class="label">Last Read: </tspan><tspan class="val">—</tspan>
-  </text>
-  <text class="t" x="12" y="43">
-    <tspan class="label">Last Watched: </tspan><tspan class="val">—</tspan>
-  </text>
-  <text class="t" x="12" y="61">
-    <tspan class="label">Last Listened To: </tspan><tspan class="val">DANCE... — Slayyyter</tspan>
-  </text>
+  <text class="t" x="0" y="18">Last Read: —</text>
+  <text class="t" x="0" y="40">Last Watched: —</text>
+  <text class="t" x="0" y="62">Last Listened To: DANCE... — Slayyyter</text>
 </svg>
