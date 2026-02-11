@@ -1,39 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     xmlns:xlink="http://www.w3.org/1999/xlink"
-     width="360" height="54" viewBox="0 0 360 54">
-  <rect width="100%" height="100%" fill="transparent"/>
+     width="320" height="84" viewBox="0 0 320 84">
+  <style>
+    .line {
+      font-family: Times New Roman, Times, serif;
+      font-size: 11px;
+      opacity: 1;
+    }
+    .label {
+      fill: #613d12;
+      letter-spacing: 0.3px;
+    }
+    .value {
+      fill: #000000;
+      letter-spacing: 0.3px;
+    }
+  </style>
 
-  <a xlink:href="https://www.goodreads.com/user/show/138343303" target="_blank">
-    <text x="0" y="18"
-      font-family="Times New Roman, Times, serif"
-      font-size="13"
-      font-weight="400"
-      fill="#613d12"
-      fill-opacity="1">
-      Last Read: Fear Itself — Stan Rice
-    </text>
+  <rect x="0" y="0" width="320" height="84" fill="transparent"/>
+
+  <a href="https://www.goodreads.com/review/show/5846417559?utm_medium=api&amp;utm_source=rss" target="_blank" rel="noopener noreferrer">
+  <text x="10" y="20" class="line">
+    <tspan class="label">Last Read:</tspan>
+    <tspan class="value"> Fear Itself — Stan Rice</tspan>
+  </text>
   </a>
 
-  <a xlink:href="https://letterboxd.com/eneremit/" target="_blank">
-    <text x="0" y="36"
-      font-family="Times New Roman, Times, serif"
-      font-size="13"
-      font-weight="400"
-      fill="#613d12"
-      fill-opacity="1">
-      Last Watched: —
-    </text>
-  </a>
+  <text x="10" y="38" class="line">
+    <tspan class="label">Last Watched:</tspan>
+    <tspan class="value"> —</tspan>
+  </text>
 
-  <a xlink:href="https://www.last.fm/user/eneremit" target="_blank">
-    <text x="0" y="54"
-      font-family="Times New Roman, Times, serif"
-      font-size="13"
-      font-weight="400"
-      fill="#613d12"
-      fill-opacity="1">
-      Last Listened To: DANCE... — Slayyyter
-    </text>
+  <a href="https://www.last.fm/music/Slayyyter/_/DANCE..." target="_blank" rel="noopener noreferrer">
+  <text x="10" y="56" class="line">
+    <tspan class="label">Last Listened To:</tspan>
+    <tspan class="value"> DANCE... — Slayyyter</tspan>
+  </text>
   </a>
 </svg>
