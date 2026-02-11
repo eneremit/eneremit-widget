@@ -1,9 +1,9 @@
 // generate-svg.cjs
-// Generates now-playing.svg (3 lines)
-// Labels in #222222
-// Values in #613d12
-// Left-aligned
-// Auto-wrap long values (safer for Lana Del Rey titles)
+// Final stable version
+// Wide canvas + overflow visible
+// 42-char wrap
+// Labels #222222, Values #613d12
+// Big, left-aligned, Tumblr-matching typography
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -16,7 +16,7 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE ---------
 const STYLE = {
-  width: 440,
+  width: 700, // ← widened so nothing clips in raw
 
   paddingLeft: 12,
   paddingTop: 30,
@@ -34,7 +34,6 @@ const STYLE = {
   labelLetterSpacing: "0.3px",
   valueLetterSpacing: "0.3px",
 
-  // 🔥 updated safely
   approxCharsPerLine: 42,
 };
 
@@ -88,7 +87,9 @@ function wrapValue(value, maxChars) {
   if (dashIdx !== -1) {
     const left = v.slice(0, dashIdx).trim();
     const right = v.slice(dashIdx + dash.length).trim();
-    if (left && right && left.length <= maxChars) return [left, `— ${right}`];
+    if (left && right && left.length <= maxChars) {
+      return [left, `— ${right}`];
+    }
   }
 
   const cut = v.lastIndexOf(" ", maxChars);
@@ -199,7 +200,6 @@ async function getGoodreadsLatest() {
 // ---------- SVG ----------
 function renderSvg(lines) {
   const S = STYLE;
-
   let y = S.paddingTop;
   const nodes = [];
 
@@ -243,7 +243,8 @@ function renderSvg(lines) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      width="${S.width}" height="${height}"
-     viewBox="0 0 ${S.width} ${height}">
+     viewBox="0 0 ${S.width} ${height}"
+     overflow="visible">
   <style>
     .line {
       font-family: ${S.fontFamily};
