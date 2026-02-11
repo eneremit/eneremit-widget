@@ -15,18 +15,14 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 // --------- STYLE (LEGIBILITY BOOST) ---------
 // Bigger but still “bio-sized” for your sidebar.
 const STYLE = {
-  width: 300,        // was 260
-  paddingY: 16,      // was 14
-  lineGap: 18,       // was 16
-  paddingRight: 0,
-
+  width: 360,
+  paddingX: 0,
+  paddingY: 0,
+  lineGap: 22,      // slightly more breathing room
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 12,      // was 11
-
-  labelColor: "#613d12",
-  valueColor: "#000000",
-  labelLetterSpacing: "0.3px",
-  valueLetterSpacing: "0.3px",
+  fontSize: 16,     // ← bump this up
+  fontWeight: 400,
+  fill: "#613d12",
   opacity: 1,
 };
 
