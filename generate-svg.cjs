@@ -1,8 +1,5 @@
 // generate-svg.cjs
-// Auto-width SVG so text never clips (even in <img> rendering)
-// Wrap values at 42 chars
-// Labels #222222, Values #613d12
-// Left-aligned, Tumblr-friendly
+// Generates now-playing.svg (3 lines) sized for Tumblr sidebar (no shrink)
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -13,34 +10,24 @@ const LASTFM_USER = process.env.LASTFM_USER || "";
 const GOODREADS_RSS = process.env.GOODREADS_RSS || "";
 const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
-// --------- STYLE ---------
+// --------- STYLE tuned for Tumblr sidebar ---------
 const STYLE = {
-  // width is computed dynamically; this is just a floor
-  minWidth: 760,
-  maxWidth: 1400, // prevents going insane-wide; long stuff will wrap anyway
-
-  paddingLeft: 12,
-  paddingTop: 30,
-  paddingBottom: 26,
+  width: 270,          // IMPORTANT: match sidebar width so it doesn't get scaled down
+  paddingLeft: 0,
+  paddingTop: 18,
+  paddingBottom: 14,
 
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 26,
-
-  lineGap: 40,
-  wrapGap: 30,
+  fontSize: 16,        // bigger than before
+  lineGap: 24,         // more breathing room
 
   labelColor: "#222222",
   valueColor: "#613d12",
+  letterSpacing: "0.3px",
 
-  labelLetterSpacing: "0.3px",
-  valueLetterSpacing: "0.3px",
-
-  approxCharsPerLine: 42,
-
-  // crude-but-effective font metrics for Times @ this size
-  // (avg glyph width ≈ 0.62em; a little extra for safety)
-  avgCharPx: 0.66,
-  extraRightPad: 80, // big “just in case” buffer
+  // how much of the VALUE text to keep (book/movie/song part)
+  // increase if you want, but this is already pretty generous for 270px width.
+  maxValueChars: 60,
 };
 
 const parser = new XMLParser({ ignoreAttributes: false });
@@ -53,6 +40,13 @@ function escapeXml(str = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+function clampValue(s, maxChars) {
+  const t = (s || "").trim();
+  if (!t) return "—";
+  if (t.length <= maxChars) return t;
+  return t.slice(0, Math.max(0, maxChars - 1)).trimEnd() + "…";
 }
 
 async function fetchText(url) {
@@ -76,61 +70,13 @@ function pickFirstItem(rssParsed) {
 
 function splitLabelValue(lineText) {
   const idx = lineText.indexOf(":");
-  if (idx === -1) return { label: lineText.trim(), value: "" };
-  return {
-    label: lineText.slice(0, idx + 1).trim(),
-    value: lineText.slice(idx + 1).trim(),
-  };
-}
-
-function wrapValue(value, maxChars) {
-  const v = (value || "").trim();
-  if (!v) return ["—"];
-  if (v.length <= maxChars) return [v];
-
-  // prefer wrapping at “ — ” so Track stays with itself
-  const dash = " — ";
-  const dashIdx = v.indexOf(dash);
-  if (dashIdx !== -1) {
-    const left = v.slice(0, dashIdx).trim();
-    const right = v.slice(dashIdx + dash.length).trim();
-    if (left && right && left.length <= maxChars) {
-      return [left, `— ${right}`];
-    }
-  }
-
-  // otherwise wrap at last space before limit
-  const cut = v.lastIndexOf(" ", maxChars);
-  if (cut > 10) return [v.slice(0, cut).trim(), v.slice(cut + 1).trim()];
-
-  return [v.slice(0, maxChars).trim(), v.slice(maxChars).trim()];
-}
-
-function estimateNeededWidthPx(renderPlan) {
-  // longest rendered line is: "<label> <valueLine>"
-  let maxChars = 0;
-
-  for (const row of renderPlan) {
-    const labelChars = (row.label || "").length;
-    for (const vLine of row.valueLines) {
-      // value line has leading space in rendering (except wrapped line starts at x too)
-      const lineChars = labelChars + 1 + (vLine || "").length;
-      if (lineChars > maxChars) maxChars = lineChars;
-    }
-  }
-
-  const approxPx =
-    STYLE.paddingLeft +
-    Math.ceil(maxChars * STYLE.fontSize * STYLE.avgCharPx) +
-    STYLE.extraRightPad;
-
-  return Math.min(Math.max(approxPx, STYLE.minWidth), STYLE.maxWidth);
+  if (idx === -1) return { label: lineText, value: "" };
+  return { label: lineText.slice(0, idx + 1), value: lineText.slice(idx + 1).trimStart() };
 }
 
 // ---------- Last.fm ----------
 async function getLastfmLine() {
-  if (!LASTFM_API_KEY || !LASTFM_USER)
-    return { text: "Last Listened To: —", link: null };
+  if (!LASTFM_API_KEY || !LASTFM_USER) return { text: "Last Listened To: —", link: null };
 
   const url =
     "https://ws.audioscrobbler.com/2.0/?" +
@@ -160,9 +106,9 @@ async function getLastfmLine() {
 // ---------- Letterboxd ----------
 function parseLetterboxdTitle(rawTitle = "") {
   const t = rawTitle.trim();
-  const clean = t.split(" - ")[0].trim();
+  const clean = t.split(" - ")[0].trim(); // drop rating suffix etc.
 
-  const m = clean.match(/^(.+?),\s*(\d{4})(?:\b|$)/);
+  const m = clean.match(/^(.+?),\s*(\d{4})/);
   if (m) return `${m[1].trim()} (${m[2].trim()})`;
 
   const p = clean.match(/^(.+?)\s*\((\d{4})\)\s*$/);
@@ -179,7 +125,7 @@ async function getLetterboxdLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Watched: —", link: null };
 
-  const movie = parseLetterboxdTitle(item.title || "");
+  const movie = parseLetterboxdTitle((item.title || "").trim());
   const link = (item.link || "").trim() || null;
 
   return { text: `Last Watched: ${movie || "—"}`, link };
@@ -194,106 +140,88 @@ async function getGoodreadsLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
+  const rawTitle = (item.title || "").trim();
   const link = (item.link || "").trim() || null;
-  let rawTitle = (item.title || "").trim();
 
-  const authorCandidates = [
-    item["dc:creator"],
-    item.creator,
-    item.author,
-    item.author_name,
-  ]
+  const authorCandidates = [item.author_name, item.author, item["dc:creator"], item.creator]
     .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter(Boolean);
 
   let author = authorCandidates[0] || "";
 
-  // fall back to “Title by Author” parsing
-  if (!author && / by /i.test(rawTitle)) {
-    const parts = rawTitle.split(/ by /i);
-    if (parts.length >= 2) author = parts.slice(1).join(" by ").trim();
-  }
-
   let title = rawTitle;
-  if (/ by /i.test(rawTitle)) title = rawTitle.split(/ by /i)[0].trim();
+  if (/ by /i.test(rawTitle)) {
+    const parts = rawTitle.split(/ by /i);
+    title = parts[0].trim();
+    if (!author) author = parts.slice(1).join(" by ").trim();
+  }
 
   if (!title) return { text: "Last Read: —", link };
 
-  // if author missing, keep the “— —” placeholder you liked
-  const authorText = author ? ` — ${author}` : " — —";
+  const authorText = author ? ` — ${author}` : "";
   return { text: `Last Read: ${title}${authorText}`, link };
 }
 
-// ---------- Build render plan (also used to estimate width) ----------
-function buildRenderPlan(lines) {
-  return lines.map((line) => {
-    const { label, value } = splitLabelValue(line.text);
-    const valueLines = wrapValue(value, STYLE.approxCharsPerLine);
-    return { label, valueLines, link: line.link || null };
-  });
-}
-
 // ---------- SVG ----------
-function renderSvg(renderPlan, widthPx) {
-  let y = STYLE.paddingTop;
-  const nodes = [];
+function renderSvg(lines) {
+  const {
+    width,
+    paddingLeft,
+    paddingTop,
+    paddingBottom,
+    fontSize,
+    lineGap,
+    fontFamily,
+    labelColor,
+    valueColor,
+    letterSpacing,
+    maxValueChars,
+  } = STYLE;
 
-  for (const row of renderPlan) {
-    const safeLabel = escapeXml(row.label || "");
-    const safeV1 = escapeXml(row.valueLines[0] || "—");
-    const safeV2 = row.valueLines[1] ? escapeXml(row.valueLines[1]) : "";
+  const height = paddingTop + paddingBottom + lineGap * lines.length;
 
-    const textParts = [
-      `<tspan class="label">${safeLabel}</tspan>`,
-      `<tspan class="value">${" " + safeV1}</tspan>`,
-    ];
+  const rendered = lines
+    .map((line, i) => {
+      const y = paddingTop + (i + 1) * lineGap;
 
-    if (safeV2) {
-      textParts.push(
-        `<tspan x="${STYLE.paddingLeft}" dy="${STYLE.wrapGap}" class="value">${safeV2}</tspan>`
-      );
-    }
+      const { label, value } = splitLabelValue(line.text);
+      const safeLabel = escapeXml(label);
+      const safeValue = escapeXml(clampValue(value, maxValueChars));
 
-    const textNode = `
-  <text x="${STYLE.paddingLeft}" y="${y}" class="line" text-anchor="start">
-    ${textParts.join("")}
+      const textNode = `
+  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">
+    <tspan class="label">${safeLabel}</tspan>
+    <tspan class="value"> ${safeValue}</tspan>
   </text>`;
 
-    const wrapped = row.link
-      ? `
-  <a href="${escapeXml(row.link)}" target="_blank" rel="noopener noreferrer">
+      if (line.link) {
+        const safeLink = escapeXml(line.link);
+        return `
+  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">
     ${textNode}
-  </a>`
-      : textNode;
-
-    nodes.push(wrapped);
-    y += STYLE.lineGap + (safeV2 ? STYLE.wrapGap : 0);
-  }
-
-  const height = y + STYLE.paddingBottom;
+  </a>`;
+      }
+      return textNode;
+    })
+    .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="${widthPx}" height="${height}"
-     viewBox="0 0 ${widthPx} ${height}">
+     width="${width}" height="${height}"
+     viewBox="0 0 ${width} ${height}">
   <style>
     .line {
-      font-family: ${STYLE.fontFamily};
-      font-size: ${STYLE.fontSize}px;
+      font-family: ${fontFamily};
+      font-size: ${fontSize}px;
+      letter-spacing: ${letterSpacing};
     }
-    .label {
-      fill: ${STYLE.labelColor};
-      letter-spacing: ${STYLE.labelLetterSpacing};
-    }
-    .value {
-      fill: ${STYLE.valueColor};
-      letter-spacing: ${STYLE.valueLetterSpacing};
-    }
+    .label { fill: ${labelColor}; }
+    .value { fill: ${valueColor}; }
     a { text-decoration: none; }
   </style>
 
   <rect width="100%" height="100%" fill="transparent"/>
-${nodes.join("\n")}
+${rendered}
 </svg>`;
 }
 
@@ -310,10 +238,7 @@ ${nodes.join("\n")}
     const lb = lbRes.status === "fulfilled" ? lbRes.value : { text: "Last Watched: —", link: null };
     const lf = lfRes.status === "fulfilled" ? lfRes.value : { text: "Last Listened To: —", link: null };
 
-    const renderPlan = buildRenderPlan([gr, lb, lf]);
-    const widthPx = estimateNeededWidthPx(renderPlan);
-
-    const svg = renderSvg(renderPlan, widthPx);
+    const svg = renderSvg([gr, lb, lf]);
     fs.writeFileSync("now-playing.svg", svg, "utf8");
     console.log("Wrote now-playing.svg");
   } catch (err) {
