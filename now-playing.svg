@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="290" height="128"
-     viewBox="0 0 290 128"
+     width="290" height="104"
+     viewBox="0 0 290 104"
      overflow="visible">
   <style>
     .line {
@@ -24,20 +24,19 @@
   </text>
   </a>
 
-  <a href="https://letterboxd.com/eneremit/film/hamnet/" target="_blank" rel="noopener noreferrer">
+  <a href="https://letterboxd.com/eneremit/film/the-housemaid-2025/2/" target="_blank" rel="noopener noreferrer">
     
   <text x="0" y="66" class="line" text-anchor="start">
     <tspan class="label">Last Watched:</tspan>
-    <tspan class="value"> Hamnet (2025)</tspan>
+    <tspan class="value"> The Housemaid (2025)</tspan>
   </text>
   </a>
 
-  <a href="https://www.last.fm/music/Lana+Del+Rey/_/Mariners+Apartment+Complex" target="_blank" rel="noopener noreferrer">
+  <a href="https://www.last.fm/music/Robyn/_/Sexistential" target="_blank" rel="noopener noreferrer">
     
   <text x="0" y="90" class="line" text-anchor="start">
     <tspan class="label">Last Listened To:</tspan>
-    <tspan class="value"> Mariners Apartment Complex</tspan>
-    <tspan class="value" x="146" dy="24">— Lana Del Rey</tspan>
+    <tspan class="value"> Sexistential — Robyn</tspan>
   </text>
   </a>
 </svg>
