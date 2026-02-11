@@ -1,6 +1,8 @@
 // generate-svg.cjs
 // Generates now-playing.svg (3 lines) sized for Tumblr sidebar (no shrink)
 
+"use strict";
+
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
 
@@ -12,21 +14,20 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE tuned for Tumblr sidebar ---------
 const STYLE = {
-  width: 270, // IMPORTANT: match sidebar width so it doesn't get scaled down
+  width: 270, // match sidebar width so it doesn't get scaled down
   paddingLeft: 0,
   paddingTop: 18,
   paddingBottom: 14,
 
   fontFamily: "Times New Roman, Times, serif",
-  fontSize: 16, // bigger than before
-  lineGap: 24, // more breathing room
+  fontSize: 16,
+  lineGap: 24,
 
   labelColor: "#222222",
   valueColor: "#613d12",
   letterSpacing: "0.3px",
 
-  // VALUE is the book/movie/song part (not the label).
-  // 60 was too long for 270px, so we clamp harder to avoid visual clipping.
+  // Clamp the VALUE (book/movie/song) so it doesn't visually clip in 270px.
   maxValueChars: 42,
 };
 
@@ -191,41 +192,35 @@ function renderSvg(lines) {
       const safeLabel = escapeXml(label);
       const safeValue = escapeXml(clampValue(value, maxValueChars));
 
-      const textNode = `
-  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">
-    <tspan class="label">${safeLabel}</tspan>
-    <tspan class="value"> ${safeValue}</tspan>
-  </text>`;
+      const textNode =
+        `\n  <text x="${paddingLeft}" y="${y}" class="line" text-anchor="start">` +
+        `\n    <tspan class="label">${safeLabel}</tspan>` +
+        `\n    <tspan class="value"> ${safeValue}</tspan>` +
+        `\n  </text>`;
 
       if (line.link) {
         const safeLink = escapeXml(line.link);
-        return `
-  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">
-    ${textNode}
-  </a>`;
+        return `\n  <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${textNode}\n  </a>`;
       }
       return textNode;
     })
     .join("\n");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
-     width="${width}" height="${height}"
-     viewBox="0 0 ${width} ${height}">
-  <style>
-    .line {
-      font-family: ${fontFamily};
-      font-size: ${fontSize}px;
-      letter-spacing: ${letterSpacing};
-    }
-    .label { fill: ${labelColor}; }
-    .value { fill: ${valueColor}; }
-    a { text-decoration: none; }
-  </style>
-
-  <rect width="100%" height="100%" fill="transparent"/>
-${rendered}
-</svg>`;
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg"\n` +
+    `     width="${width}" height="${height}"\n` +
+    `     viewBox="0 0 ${width} ${height}">\n` +
+    `  <style>\n` +
+    `    .line { font-family: ${fontFamily}; font-size: ${fontSize}px; letter-spacing: ${letterSpacing}; }\n` +
+    `    .label { fill: ${labelColor}; }\n` +
+    `    .value { fill: ${valueColor}; }\n` +
+    `    a { text-decoration: none; }\n` +
+    `  </style>\n\n` +
+    `  <rect width="100%" height="100%" fill="transparent"/>\n` +
+    `${rendered}\n` +
+    `</svg>\n`
+  );
 }
 
 // ---------- main ----------
@@ -245,10 +240,6 @@ ${rendered}
     fs.writeFileSync("now-playing.svg", svg, "utf8");
     console.log("Wrote now-playing.svg");
   } catch (err) {
-    console.error("Failed to generate SVG:", err);
-    process.exit(1);
-  }
-})();
     console.error("Failed to generate SVG:", err);
     process.exit(1);
   }
