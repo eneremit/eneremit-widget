@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: update-svg
-  cancel-in-progress: true
+  group: update-svg-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -25,9 +25,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Generate SVG
         env:
@@ -42,10 +43,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Always sync first (prevents push/rebase weirdness)
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+
           git add now-playing.svg
           git diff --cached --quiet && exit 0
 
           git commit -m "Update now-playing.svg"
-
-          git pull --rebase origin main
-          git push
+          git push origin HEAD:"${GITHUB_REF_NAME}"
