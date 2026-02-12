@@ -1,7 +1,7 @@
 // generate-svg.cjs
 // Generates now-playing.svg (Read / Watched / Listened)
 // Natural label/value spacing + wraps ONLY when needed
-// Prevents tiny last-letter clipping by allowing overflow + a bit more width
+// Adds: cache-busting, no-store fetch, timeout+retry, more robust RSS parsing
 
 const fs = require("fs");
 const { XMLParser } = require("fast-xml-parser");
@@ -14,7 +14,7 @@ const LETTERBOXD_RSS = process.env.LETTERBOXD_RSS || "";
 
 // --------- STYLE (Tumblr sidebar tuned) ---------
 const STYLE = {
-  width: 290, // <-- was 270. Small bump fixes clipping without changing your CSS.
+  width: 290, // was 270
   paddingLeft: 0,
   paddingRight: 0,
   paddingTop: 18,
@@ -28,13 +28,20 @@ const STYLE = {
   valueColor: "#613d12",
 
   // Wrapping / layout
-  labelWidthPx: 140, // indent for line 2 only (does NOT affect spacing on line 1)
+  labelWidthPx: 140,
   gapPx: 6,
   lineGap: 24,
   maxLinesPerSection: 2,
 };
 
-const parser = new XMLParser({ ignoreAttributes: false });
+// More tolerant parser options help RSS/Atom weirdness
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "",
+  trimValues: true,
+  parseTagValue: true,
+  parseAttributeValue: true,
+});
 
 // ---------- helpers ----------
 function escapeXml(str = "") {
@@ -46,23 +53,76 @@ function escapeXml(str = "") {
     .replaceAll("'", "&apos;");
 }
 
+function safeText(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return "";
+}
+
+function firstOf(v) {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function withCacheBust(url) {
+  if (!url) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}cb=${Date.now()}`;
+}
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 9000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWithRetry(url, opts = {}, { retries = 2, timeoutMs = 9000 } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, opts, timeoutMs);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      return res;
+    } catch (e) {
+      lastErr = e;
+      // small backoff
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 async function fetchText(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget" } });
-  if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
+  const res = await fetchWithRetry(withCacheBust(url), {
+    cache: "no-store",
+    headers: {
+      "User-Agent": "eneremit-widget",
+      Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    },
+  });
   return await res.text();
 }
 
 async function fetchJson(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "eneremit-widget" } });
-  if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
+  const res = await fetchWithRetry(withCacheBust(url), {
+    cache: "no-store",
+    headers: {
+      "User-Agent": "eneremit-widget",
+      Accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+    },
+  });
   return await res.json();
 }
 
-function pickFirstItem(rssParsed) {
-  const channel = rssParsed?.rss?.channel;
-  let item = channel?.item;
-  if (Array.isArray(item)) item = item[0];
-  return item || null;
+// Supports both RSS (rss.channel.item) and Atom (feed.entry)
+function pickFirstItem(parsed) {
+  const rssItem = parsed?.rss?.channel?.item;
+  const atomEntry = parsed?.feed?.entry;
+  return firstOf(rssItem) || firstOf(atomEntry) || null;
 }
 
 function splitLabelValue(lineText) {
@@ -75,7 +135,6 @@ function splitLabelValue(lineText) {
 }
 
 // Rough width estimate for Times at 16px. We use it ONLY to decide if we wrap.
-// (We keep it generous so we don’t wrap early.)
 function approxPxPerChar() {
   return 7.0;
 }
@@ -111,7 +170,6 @@ function wrapByWords(text, maxChars) {
 function smartWrapValue(value, maxCharsLine1, maxCharsLine2, maxLines) {
   const v = (value || "—").trim() || "—";
 
-  // generous slack to avoid wrapping too early
   if (v.length <= maxCharsLine1 + 6) return [v];
 
   const sep = " — ";
@@ -120,17 +178,14 @@ function smartWrapValue(value, maxCharsLine1, maxCharsLine2, maxLines) {
     const meta = parts.pop().trim();
     const main = parts.join(sep).trim();
 
-    // If main fits on line 1, put meta on line 2 intact.
     if (main && main.length <= maxCharsLine1 + 6) {
       return [main, ellipsize("— " + meta, maxCharsLine2)].slice(0, maxLines);
     }
 
-    // Otherwise wrap main, still keep meta intact.
     const [m1] = wrapByWords(main || v, maxCharsLine1 + 2);
     return [m1, ellipsize("— " + meta, maxCharsLine2)].slice(0, maxLines);
   }
 
-  // normal wrap
   const [l1, l2raw] = wrapByWords(v, maxCharsLine1 + 2);
   const l2 = l2raw ? ellipsize(l2raw, maxCharsLine2) : "";
   return l2 ? [l1, l2].slice(0, maxLines) : [l1];
@@ -148,17 +203,19 @@ async function getLastfmLine() {
       api_key: LASTFM_API_KEY,
       format: "json",
       limit: "1",
+      _: String(Date.now()), // extra anti-cache
     }).toString();
 
   const data = await fetchJson(url);
   const item = data?.recenttracks?.track?.[0];
   if (!item) return { text: "Last Listened To: —", link: null };
 
-  const track = (item.name || "").trim();
-  const artist = (item.artist?.["#text"] || item.artist?.name || "").trim();
-  const link = (item.url || "").trim() || null;
+  const track = (safeText(item.name) || "").trim();
+  const artist = (safeText(item.artist?.["#text"] || item.artist?.name) || "").trim();
+  const link =
+    (safeText(item.url) || "").trim() || `https://www.last.fm/user/${encodeURIComponent(LASTFM_USER)}`;
 
-  const nowPlaying = Boolean(item?.["@attr"]?.nowplaying);
+  const nowPlaying = item?.["@attr"]?.nowplaying === "true" || item?.["@attr"]?.nowplaying === true;
   const label = nowPlaying ? "Now Listening To" : "Last Listened To";
   const value = [track, artist].filter(Boolean).join(" — ").trim();
 
@@ -187,8 +244,11 @@ async function getLetterboxdLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Watched: —", link: null };
 
-  const movie = parseLetterboxdTitle((item.title || "").trim());
-  const link = (item.link || "").trim() || null;
+  const rawTitle =
+    (safeText(item.title) || safeText(item["dc:title"]) || safeText(item["media:title"]) || "").trim();
+
+  const movie = parseLetterboxdTitle(rawTitle);
+  const link = (safeText(item.link) || safeText(item.id) || "").trim() || null;
 
   return { text: `Last Watched: ${movie || "—"}`, link };
 }
@@ -202,11 +262,18 @@ async function getGoodreadsLatest() {
   const item = pickFirstItem(parsed);
   if (!item) return { text: "Last Read: —", link: null };
 
-  const rawTitle = (item.title || "").trim();
-  const link = (item.link || "").trim() || null;
+  const rawTitle =
+    (safeText(item.title) || safeText(item["dc:title"]) || safeText(item["media:title"]) || "").trim();
 
-  const authorCandidates = [item.author_name, item.author, item["dc:creator"], item.creator]
-    .map((v) => (typeof v === "string" ? v.trim() : ""))
+  const link = (safeText(item.link) || safeText(item.id) || "").trim() || null;
+
+  const authorCandidates = [
+    safeText(item.author_name),
+    safeText(item.author),
+    safeText(item["dc:creator"]),
+    safeText(item.creator),
+  ]
+    .map((v) => v.trim())
     .filter(Boolean);
 
   let author = authorCandidates[0] || "";
@@ -214,7 +281,7 @@ async function getGoodreadsLatest() {
 
   if (/ by /i.test(rawTitle)) {
     const parts = rawTitle.split(/ by /i);
-    title = parts[0].trim();
+    title = (parts[0] || "").trim();
     if (!author) author = parts.slice(1).join(" by ").trim();
   }
 
@@ -246,14 +313,18 @@ function renderSvg(lines) {
   const availablePx = Math.max(60, width - paddingLeft - paddingRight);
   const maxCharsFullLine = approxCharsThatFit(availablePx) + 10;
 
-  // For wrap decision, we reserve some space for the label.
-  // This DOES NOT affect spacing—only the wrap decision.
-  const maxCharsLine1Value = approxCharsThatFit(Math.max(80, availablePx - labelWidthPx - gapPx)) + 10;
+  const maxCharsLine1Value =
+    approxCharsThatFit(Math.max(80, availablePx - labelWidthPx - gapPx)) + 10;
   const maxCharsLine2Value = maxCharsFullLine;
 
   const blocks = lines.map((line) => {
     const { label, value } = splitLabelValue(line.text);
-    const wrapped = smartWrapValue(value || "—", maxCharsLine1Value, maxCharsLine2Value, maxLinesPerSection);
+    const wrapped = smartWrapValue(
+      value || "—",
+      maxCharsLine1Value,
+      maxCharsLine2Value,
+      maxLinesPerSection
+    );
     const valueX = paddingLeft + labelWidthPx + gapPx;
     return { label, wrapped, link: line.link || null, valueX };
   });
@@ -273,9 +344,6 @@ function renderSvg(lines) {
 
       cursor += Math.max(1, b.wrapped.length);
 
-      // IMPORTANT:
-      // line 1 = natural spacing: label + single space + value
-      // line 2 = indented under value column
       const textNode = `
   <text x="${paddingLeft}" y="${y1}" class="line" text-anchor="start">
     <tspan class="label">${labelSafe}</tspan>
@@ -320,22 +388,23 @@ ${rendered}
 
 // ---------- main ----------
 (async function main() {
-  try {
-    const [grRes, lbRes, lfRes] = await Promise.allSettled([
-      getGoodreadsLatest(),
-      getLetterboxdLatest(),
-      getLastfmLine(),
-    ]);
+  // Don’t fail the whole build if one feed flakes
+  const [grRes, lbRes, lfRes] = await Promise.allSettled([
+    getGoodreadsLatest(),
+    getLetterboxdLatest(),
+    getLastfmLine(),
+  ]);
 
-    const gr = grRes.status === "fulfilled" ? grRes.value : { text: "Last Read: —", link: null };
-    const lb = lbRes.status === "fulfilled" ? lbRes.value : { text: "Last Watched: —", link: null };
-    const lf = lfRes.status === "fulfilled" ? lfRes.value : { text: "Last Listened To: —", link: null };
+  const gr = grRes.status === "fulfilled" ? grRes.value : { text: "Last Read: —", link: null };
+  const lb = lbRes.status === "fulfilled" ? lbRes.value : { text: "Last Watched: —", link: null };
+  const lf = lfRes.status === "fulfilled" ? lfRes.value : { text: "Last Listened To: —", link: null };
 
-    const svg = renderSvg([gr, lb, lf]);
-    fs.writeFileSync("now-playing.svg", svg, "utf8");
-    console.log("Wrote now-playing.svg");
-  } catch (err) {
-    console.error("Failed to generate SVG:", err);
-    process.exit(1);
-  }
+  // Optional: leaves breadcrumbs in Actions logs
+  console.log("DEBUG gr:", gr);
+  console.log("DEBUG lb:", lb);
+  console.log("DEBUG lf:", lf);
+
+  const svg = renderSvg([gr, lb, lf]);
+  fs.writeFileSync("now-playing.svg", svg, "utf8");
+  console.log("Wrote now-playing.svg");
 })();
